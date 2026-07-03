@@ -34,7 +34,7 @@ public final class ConsentViewModel: ObservableObject {
         self.originalConsent = currentConsent
         self.currentConsent = currentConsent
         
-        // Build category configurations
+        // Build category configurations using the public ConsentCategoryConfig from Configuration.swift
         self.categoryConfigs = categories.map { (id, name) in
             ConsentCategoryConfig(
                 id: id,
@@ -79,6 +79,11 @@ public final class ConsentViewModel: ObservableObject {
     public func hasConsentChanged() -> Bool {
         let current = getCurrentConsent()
         return current != originalConsent
+    }
+    
+    /// Clear error
+    public func clearError() {
+        self.error = nil
     }
     
     /// Accept all categories
@@ -277,14 +282,4 @@ public struct ConsentCategory: Identifiable, Sendable {
         self.required = required
         self.isEnabled = isEnabled
     }
-}
-
-// MARK: - Consent Category Config
-
-private struct ConsentCategoryConfig {
-    let id: String
-    let name: String
-    let description: String
-    let required: Bool
-    let defaultEnabled: Bool
 }
