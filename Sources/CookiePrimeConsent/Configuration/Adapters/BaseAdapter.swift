@@ -12,28 +12,13 @@ import AdSupport
 
 /// Protocol for SDK adapters that handle consent-aware configuration
 public protocol Adapter: Sendable {
-    /// Name of the SDK
     var sdkName: String { get }
-    
-    /// Consent categories this SDK belongs to
     var categories: Set<SDKCategory> { get }
-    
-    /// Whether the SDK is available in the current environment
     var isAvailable: Bool { get }
-    
-    /// Whether this SDK requires App Tracking Transparency permission
     var requiresATT: Bool { get }
-    
-    /// Configure the SDK with consent status
     func configure(with consent: Bool) async throws
-    
-    /// Disable tracking for this SDK
     func disableTracking() async throws
-    
-    /// Enable tracking for this SDK
     func enableTracking() async throws
-    
-    /// Check if the SDK is currently enabled
     func isEnabled() async -> Bool
 }
 
@@ -66,7 +51,6 @@ open class BaseAdapter: Adapter {
         self.isAvailable = isAvailable
         self.requiresATT = requiresATT
         
-        // Mark as sensitive if requires ATT
         if requiresATT {
             configurationManager.markSensitiveSDK(sdkName)
         }
@@ -77,14 +61,12 @@ open class BaseAdapter: Adapter {
     open func configure(with consent: Bool) async throws {
         let timestamp = Date()
         
-        // Log configuration
         telemetryService.logSDKConfiguration(
             sdkName: sdkName,
             enabled: consent,
             timestamp: timestamp
         )
         
-        // Store configuration
         configurationManager.saveSDKConfiguration(
             sdkName: sdkName,
             enabled: consent,
@@ -104,12 +86,10 @@ open class BaseAdapter: Adapter {
     }
     
     open func enableTracking() async throws {
-        // Override in subclasses
         Logger.log(.debug, "🔓 \(sdkName) tracking enabled (default)")
     }
     
     open func disableTracking() async throws {
-        // Override in subclasses
         Logger.log(.debug, "🔒 \(sdkName) tracking disabled (default)")
     }
     
@@ -122,7 +102,6 @@ open class BaseAdapter: Adapter {
     
     // MARK: - ATT Helpers
     
-    /// Check ATT authorization status
     open func checkATTStatus() async -> Bool {
         guard requiresATT else { return true }
         
@@ -136,7 +115,6 @@ open class BaseAdapter: Adapter {
         return true
     }
     
-    /// Request ATT if needed
     open func requestATTIfNeeded() async -> Bool {
         #if canImport(AppTrackingTransparency)
         if #available(iOS 14, *) {
