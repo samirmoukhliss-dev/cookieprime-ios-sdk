@@ -23,8 +23,8 @@ public struct RetryPolicy: Sendable {
     /// Retryable status codes
     public let retryableStatusCodes: Set<Int>
     
-    /// Retryable error types
-    public let retryableErrors: [NetworkError]  // Changed from Set<NetworkError> to Array
+    /// Retryable error types (using array since NetworkError is not Hashable)
+    public let retryableErrors: [NetworkError]
     
     // MARK: - Initialization
     
@@ -56,11 +56,8 @@ public struct RetryPolicy: Sendable {
     public func delay(for attempt: Int) -> TimeInterval {
         guard attempt > 1 else { return 0 }
         
-        // Exponential backoff: initialDelay * backoffMultiplier^(attempt-2)
         let baseDelay = initialDelay * pow(backoffMultiplier, Double(attempt - 2))
         let cappedDelay = min(baseDelay, maxDelay)
-        
-        // Apply jitter
         let jitter = cappedDelay * jitterFactor * Double.random(in: -1...1)
         return max(0, cappedDelay + jitter)
     }
@@ -71,17 +68,14 @@ public struct RetryPolicy: Sendable {
         error: Error? = nil,
         statusCode: Int? = nil
     ) -> Bool {
-        // Check if max attempts exceeded
         guard attempt <= maxAttempts else { return false }
         
-        // Check if error is retryable
         if let error = error as? NetworkError {
-            if retryableErrors.contains(error) {
+            if retryableErrors.contains(where: { $0 == error }) {
                 return true
             }
         }
         
-        // Check if status code is retryable
         if let statusCode = statusCode {
             if retryableStatusCodes.contains(statusCode) {
                 return true
@@ -107,10 +101,8 @@ public struct RetryPolicy: Sendable {
 // MARK: - Retry Policy Presets
 
 extension RetryPolicy {
-    /// Standard retry policy for API requests
     public static let standard = RetryPolicy()
     
-    /// Aggressive retry policy for critical requests
     public static let aggressive = RetryPolicy(
         maxAttempts: 5,
         initialDelay: 0.2,
@@ -119,7 +111,6 @@ extension RetryPolicy {
         jitterFactor: 0.2
     )
     
-    /// Conservative retry policy for non-critical requests
     public static let conservative = RetryPolicy(
         maxAttempts: 2,
         initialDelay: 1.0,
@@ -128,7 +119,6 @@ extension RetryPolicy {
         jitterFactor: 0.05
     )
     
-    /// Retry policy for upload requests
     public static let upload = RetryPolicy(
         maxAttempts: 4,
         initialDelay: 0.5,
@@ -137,13 +127,11 @@ extension RetryPolicy {
         jitterFactor: 0.1
     )
     
-    /// No retry policy
     public static let none = RetryPolicy(maxAttempts: 1)
 }
 
 // MARK: - Retry Context
 
-/// Context for a retry operation
 public struct RetryContext: Sendable {
     public let attempt: Int
     public let totalAttempts: Int
@@ -182,18 +170,13 @@ public struct RetryContext: Sendable {
 
 // MARK: - Retry Handler
 
-/// Handler for retry events
 public protocol RetryHandler: Sendable {
-    /// Called before a retry attempt
     func willRetry(context: RetryContext) async
-    
-    /// Called after a retry attempt
     func didRetry(context: RetryContext, success: Bool) async
 }
 
-/// Default retry handler with logging
 public struct DefaultRetryHandler: RetryHandler {
-    public init() {}  // Public initializer
+    public init() {}
     
     public func willRetry(context: RetryContext) async {
         let delay = String(format: "%.2f", context.delay)
