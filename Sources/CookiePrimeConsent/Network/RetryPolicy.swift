@@ -23,7 +23,7 @@ public struct RetryPolicy: Sendable {
     /// Retryable status codes
     public let retryableStatusCodes: Set<Int>
     
-    /// Retryable error types (using array since NetworkError is not Hashable)
+    /// Retryable error types
     public let retryableErrors: [NetworkError]
     
     // MARK: - Initialization
@@ -56,8 +56,11 @@ public struct RetryPolicy: Sendable {
     public func delay(for attempt: Int) -> TimeInterval {
         guard attempt > 1 else { return 0 }
         
+        // Exponential backoff: initialDelay * backoffMultiplier^(attempt-2)
         let baseDelay = initialDelay * pow(backoffMultiplier, Double(attempt - 2))
         let cappedDelay = min(baseDelay, maxDelay)
+        
+        // Apply jitter
         let jitter = cappedDelay * jitterFactor * Double.random(in: -1...1)
         return max(0, cappedDelay + jitter)
     }
@@ -68,14 +71,17 @@ public struct RetryPolicy: Sendable {
         error: Error? = nil,
         statusCode: Int? = nil
     ) -> Bool {
+        // Check if max attempts exceeded
         guard attempt <= maxAttempts else { return false }
         
+        // Check if error is retryable
         if let error = error as? NetworkError {
-            if retryableErrors.contains(where: { $0 == error }) {
+            if isErrorRetryable(error) {
                 return true
             }
         }
         
+        // Check if status code is retryable
         if let statusCode = statusCode {
             if retryableStatusCodes.contains(statusCode) {
                 return true
@@ -96,13 +102,67 @@ public struct RetryPolicy: Sendable {
         
         return "Retry attempt \(attempt)/\(maxAttempts) in \(String(format: "%.2f", delay))s\(errorDesc)"
     }
+    
+    // MARK: - Private Helpers
+    
+    /// Check if a NetworkError is retryable using pattern matching
+    private func isErrorRetryable(_ error: NetworkError) -> Bool {
+        for retryableError in retryableErrors {
+            if errorsMatch(retryableError, error) {
+                return true
+            }
+        }
+        return false
+    }
+    
+    /// Compare two NetworkError values without requiring Equatable conformance
+    private func errorsMatch(_ lhs: NetworkError, _ rhs: NetworkError) -> Bool {
+        switch (lhs, rhs) {
+        // Simple cases without associated values
+        case (.noInternetConnection, .noInternetConnection): return true
+        case (.timeout, .timeout): return true
+        case (.connectionLost, .connectionLost): return true
+        case (.offlineMode, .offlineMode): return true
+        case (.operationQueued, .operationQueued): return true
+        case (.invalidURL, .invalidURL): return true
+        case (.invalidRequest, .invalidRequest): return true
+        case (.invalidResponse, .invalidResponse): return true
+        case (.sslError, .sslError): return true
+        case (.serverUnavailable, .serverUnavailable): return true
+        case (.maintenanceMode, .maintenanceMode): return true
+        case (.apiVersionMismatch, .apiVersionMismatch): return true
+        case (.invalidApiKey, .invalidApiKey): return true
+        case (.expiredApiKey, .expiredApiKey): return true
+        case (.licenseInvalid, .licenseInvalid): return true
+        case (.licenseExpired, .licenseExpired): return true
+        case (.cancelled, .cancelled): return true
+        
+        // Cases with associated values - compare status codes
+        case (.badRequest(let c1, _), .badRequest(let c2, _)): return c1 == c2
+        case (.unauthorized(let c1, _), .unauthorized(let c2, _)): return c1 == c2
+        case (.forbidden(let c1, _), .forbidden(let c2, _)): return c1 == c2
+        case (.notFound(let c1, _), .notFound(let c2, _)): return c1 == c2
+        case (.serverError(let c1, _), .serverError(let c2, _)): return c1 == c2
+        case (.rateLimited(let c1, _), .rateLimited(let c2, _)): return c1 == c2
+        
+        // Handle errors with associated values of different types
+        case (.encodingFailed, .encodingFailed): return true
+        case (.decodingFailed, .decodingFailed): return true
+        case (.unknown, .unknown): return true
+        
+        // All other cases don't match
+        default: return false
+        }
+    }
 }
 
 // MARK: - Retry Policy Presets
 
 extension RetryPolicy {
+    /// Standard retry policy for API requests
     public static let standard = RetryPolicy()
     
+    /// Aggressive retry policy for critical requests
     public static let aggressive = RetryPolicy(
         maxAttempts: 5,
         initialDelay: 0.2,
@@ -111,6 +171,7 @@ extension RetryPolicy {
         jitterFactor: 0.2
     )
     
+    /// Conservative retry policy for non-critical requests
     public static let conservative = RetryPolicy(
         maxAttempts: 2,
         initialDelay: 1.0,
@@ -119,6 +180,7 @@ extension RetryPolicy {
         jitterFactor: 0.05
     )
     
+    /// Retry policy for upload requests
     public static let upload = RetryPolicy(
         maxAttempts: 4,
         initialDelay: 0.5,
@@ -127,11 +189,13 @@ extension RetryPolicy {
         jitterFactor: 0.1
     )
     
+    /// No retry policy
     public static let none = RetryPolicy(maxAttempts: 1)
 }
 
 // MARK: - Retry Context
 
+/// Context for a retry operation
 public struct RetryContext: Sendable {
     public let attempt: Int
     public let totalAttempts: Int
@@ -170,11 +234,16 @@ public struct RetryContext: Sendable {
 
 // MARK: - Retry Handler
 
+/// Handler for retry events
 public protocol RetryHandler: Sendable {
+    /// Called before a retry attempt
     func willRetry(context: RetryContext) async
+    
+    /// Called after a retry attempt
     func didRetry(context: RetryContext, success: Bool) async
 }
 
+/// Default retry handler with logging
 public struct DefaultRetryHandler: RetryHandler {
     public init() {}
     
