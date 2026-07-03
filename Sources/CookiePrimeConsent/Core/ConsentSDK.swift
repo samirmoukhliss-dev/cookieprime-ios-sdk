@@ -338,9 +338,9 @@ public final class ConsentSDK: ObservableObject {
         
         // Add categories from detected SDKs
         if let result = dependencyScanner?.getLastScanResult() {
-            for category in result.requiredCategories where category != "essential" {
-                let label = ConsentCategoryConfig.label(for: category)
-                categories[category] = label
+            for category in result.requiredCategories where category.rawValue != "essential" {
+                let label = ConsentCategoryConfig.label(for: category.rawValue)
+                categories[category.rawValue] = label
             }
         }
         
@@ -551,9 +551,9 @@ public final class ConsentSDK: ObservableObject {
 
 // MARK: - ConsentViewControllerDelegate
 #if canImport(UIKit)
-extension ConsentSDK: @preconcurrency ConsentViewControllerDelegate {
-    nonisolated public func consentViewController(_ controller: ConsentViewController,
-                                                  didCompleteWithConsent consent: [String: Bool]) {
+extension ConsentSDK: ConsentViewControllerDelegate {
+    public func consentViewController(_ controller: ConsentViewController,
+                                      didCompleteWithConsent consent: [String: Bool]) {
         Task {
             do {
                 try await ConsentSDK.shared.saveConsent(consent, actorId: "user")
@@ -565,14 +565,14 @@ extension ConsentSDK: @preconcurrency ConsentViewControllerDelegate {
         }
     }
     
-    nonisolated public func consentViewControllerDidCancel(_ controller: ConsentViewController) {
+    public func consentViewControllerDidCancel(_ controller: ConsentViewController) {
         Task {
             await controller.dismiss(animated: true)
             Logger.log(.debug, "Consent UI cancelled")
         }
     }
     
-    nonisolated public func consentViewController(_ controller: ConsentViewController, didFailWithError error: Error) {
+    public func consentViewController(_ controller: ConsentViewController, didFailWithError error: Error) {
         Logger.log(.error, "Consent UI failed: \(error)")
         Task { @MainActor in
             ConsentSDK.shared.lastError = error as? CookiePrimeError ?? .unknown(error)
