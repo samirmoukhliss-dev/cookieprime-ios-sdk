@@ -126,14 +126,15 @@ public final class PerformanceMonitor {
     
     /// Get all metrics for a specific operation
     public func getMetrics(for name: String) -> [Metric] {
-        queue.sync {
+        // FIX: Added return statement
+        return queue.sync {
             metrics.filter { $0.name == name }
         }
     }
     
     /// Get all metrics
     public func getAllMetrics() -> [Metric] {
-        queue.sync {
+        return queue.sync {
             metrics
         }
     }
@@ -141,7 +142,7 @@ public final class PerformanceMonitor {
     /// Get slow operations
     public func getSlowMetrics(threshold: TimeInterval? = nil) -> [Metric] {
         let threshold = threshold ?? slowThreshold
-        queue.sync {
+        return queue.sync {
             metrics.filter { $0.duration > threshold }
         }
     }
