@@ -28,6 +28,7 @@ public final class ConsentSDK: ObservableObject {
     
     private var configuration: SDKConfiguration?
     private var initializationTask: Task<Void, Error>?
+    private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Modules
     
@@ -168,7 +169,12 @@ public final class ConsentSDK: ObservableObject {
         }
         
         Task { @MainActor in
-            let shouldShow = force || await shouldShowConsent()
+            let shouldShow: Bool
+            if force {
+                shouldShow = true
+            } else {
+                shouldShow = await shouldShowConsent()
+            }
             
             if shouldShow {
                 #if canImport(UIKit)
@@ -331,7 +337,7 @@ public final class ConsentSDK: ObservableObject {
         var categories: [String: String] = ["essential": "Essential (Required)"]
         
         // Add categories from detected SDKs
-        if let result = dependencyScanner?.lastScanResult {
+        if let result = dependencyScanner?.getLastScanResult() {
             for category in result.requiredCategories where category != "essential" {
                 let label = ConsentCategoryConfig.label(for: category)
                 categories[category] = label
@@ -353,7 +359,7 @@ public final class ConsentSDK: ObservableObject {
     
     /// Get detection summary
     public func getDetectionSummary() -> String {
-        guard let result = dependencyScanner?.lastScanResult else {
+        guard let result = dependencyScanner?.getLastScanResult() else {
             return "No detection data available"
         }
         
@@ -415,10 +421,20 @@ public final class ConsentSDK: ObservableObject {
             Task { await self?.onConnectionLost() }
         }
         
-        Task { @MainActor in
-            for await isOffline in offlineManager.$isOffline.values {
-                self.isOffline = isOffline
+        // iOS 15+ uses async sequence, iOS 14 uses Combine
+        if #available(iOS 15.0, *) {
+            Task { @MainActor in
+                for await isOffline in offlineManager.$isOffline.values {
+                    self.isOffline = isOffline
+                }
             }
+        } else {
+            // iOS 14 fallback
+            offlineManager.$isOffline
+                .sink { [weak self] isOffline in
+                    self?.isOffline = isOffline
+                }
+                .store(in: &cancellables)
         }
     }
     
@@ -555,6 +571,11 @@ extension ConsentSDK: ConsentViewControllerDelegate {
             await controller.dismiss(animated: true)
             Logger.log(.debug, "Consent UI cancelled")
         }
+    }
+    
+    public func consentViewController(_ controller: ConsentViewController, didFailWithError error: Error) {
+        Logger.log(.error, "Consent UI failed: \(error)")
+        lastError = error as? CookiePrimeError ?? .unknown(error)
     }
 }
 #endif
