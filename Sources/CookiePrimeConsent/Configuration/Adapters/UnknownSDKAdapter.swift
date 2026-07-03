@@ -5,13 +5,13 @@ import Foundation
 public final class UnknownSDKAdapter: BaseAdapter {
     
     private let vendor: SDKVendor
-    private let riskLevel: RiskLevel
+    private let riskLevel: DependencyScanner.RiskLevel
     
     public init(
         name: String,
         categories: Set<SDKCategory>,
         vendor: SDKVendor = .unknown,
-        riskLevel: RiskLevel = .medium
+        riskLevel: DependencyScanner.RiskLevel = .medium
     ) {
         self.vendor = vendor
         self.riskLevel = riskLevel
