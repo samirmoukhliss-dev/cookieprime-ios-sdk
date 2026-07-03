@@ -252,11 +252,11 @@ public enum ConsentStatus: String, Codable, Sendable {
     case expired
     
     public init(from bool: Bool?) {
-        switch bool {
-        case true: self = .granted
-        case false: self = .denied
-        case nil: self = .unknown
+        guard let bool = bool else {
+            self = .unknown
+            return
         }
+        self = bool ? .granted : .denied
     }
     
     public var boolValue: Bool? {
