@@ -1,6 +1,6 @@
 // FILE: Sources/CookiePrimeConsent/Detection/DependencyScanner.swift
 import Foundation
-import Darwin
+import Darwin  // ADD THIS LINE for _dyld_image_count and _dyld_get_image_name
 
 #if canImport(UIKit)
 import UIKit
@@ -104,7 +104,7 @@ public final class DependencyScanner {
         }
     }
     
-    // MARK: - Known SDKs Database (40+ SDKs)
+    // MARK: - Known SDKs Database
     
     private struct KnownSDK {
         let name: String
@@ -659,7 +659,7 @@ public final class DependencyScanner {
         Logger.log(.info, "   • Known SDKs: \(filteredSDKs.filter { $0.detectionMethod != .fuzzyPattern }.count)")
         Logger.log(.info, "   • Fuzzy detected: \(filteredSDKs.filter { $0.detectionMethod == .fuzzyPattern }.count)")
         Logger.log(.info, "   • Required categories: \(requiredCategories.map { $0.displayName })")
-        Logger.log(.info, "   • Overall risk: \(overallRisk.color) \(overallRisk.rawValue.uppercased())")
+        Logger.log(.info, "   • Overall risk: \(overallRisk)")  // Removed .color
         Logger.log(.info, "   • Confidence: \(Int(confidence * 100))%")
         
         return result
@@ -680,7 +680,6 @@ public final class DependencyScanner {
         return sdks.compactMap { sdkDict in
             guard let name = sdkDict["name"] as? String else { return nil }
             
-            // Try to match with known SDK database
             if let knownSDK = knownSDKs.first(where: { $0.name == name }) {
                 return DetectedSDK(
                     name: knownSDK.name,
@@ -694,15 +693,11 @@ public final class DependencyScanner {
                 )
             }
             
-            // Unknown SDK from manifest
-            let categories: Set<SDKCategory> = [.unknown]
-            let risk: RiskLevel = .medium
-            
             return DetectedSDK(
                 name: name,
                 vendor: .unknown,
-                categories: categories,
-                riskLevel: risk,
+                categories: [.unknown],
+                riskLevel: .medium,
                 detectionMethod: .compileTimeManifest,
                 confidence: 0.90,
                 evidence: ["Compile-time manifest: \(name)"],
@@ -721,16 +716,12 @@ public final class DependencyScanner {
                 guard let imageName = _dyld_get_image_name(i) else { continue }
                 let name = String(cString: imageName)
                 
-                // Skip if already processed
                 if processedNames.contains(name) { continue }
                 processedNames.insert(name)
                 
-                // Skip whitelisted items
                 if SDKWhitelist.isWhitelisted(name) { continue }
                 
-                // Check against known SDKs
                 for knownSDK in knownSDKs {
-                    // Check class names
                     if knownSDK.classNames.contains(where: { name.contains($0) }) {
                         detected.append(DetectedSDK(
                             name: knownSDK.name,
@@ -744,7 +735,6 @@ public final class DependencyScanner {
                         break
                     }
                     
-                    // Check common patterns
                     if let patterns = knownSDK.commonPatterns,
                        patterns.contains(where: { name.contains($0) }) {
                         detected.append(DetectedSDK(
@@ -780,7 +770,7 @@ public final class DependencyScanner {
                         confidence: 0.90,
                         evidence: ["Class exists: \(className)"]
                     ))
-                    break // Found one class, move to next SDK
+                    break
                 }
             }
         }
@@ -919,24 +909,20 @@ public final class DependencyScanner {
             var unknownSDKs: [DetectedSDK] = []
             var processedNames = Set<String>()
             
-            // Method 1: Detect by common naming patterns in dyld images
             let count = _dyld_image_count()
             for i in 0..<count {
                 guard let imageName = _dyld_get_image_name(i) else { continue }
                 let name = String(cString: imageName)
                 
-                // Skip if already processed or whitelisted
                 if processedNames.contains(name) || SDKWhitelist.isWhitelisted(name) {
                     continue
                 }
                 processedNames.insert(name)
                 
-                // Check against tracking patterns
                 if FuzzyPatterns.matchesTrackingPattern(name) {
                     let category = FuzzyPatterns.determineCategory(from: name)
                     let risk = FuzzyPatterns.determineRisk(from: name)
                     
-                    // Only add if not already detected as known SDK
                     if !knownSDKs.contains(where: { $0.commonPatterns?.contains { name.contains($0) } ?? false }) {
                         unknownSDKs.append(DetectedSDK(
                             name: "Possible \(category.displayName) SDK",
@@ -951,11 +937,9 @@ public final class DependencyScanner {
                 }
             }
             
-            // Method 2: Detect common tracking selectors
             for selector in FuzzyPatterns.trackingSelectors {
                 if await Self.checkSelectorExistence(selectorName: selector) {
                     if let className = await Self.findClassWithSelector(selectorName: selector) {
-                        // Skip if class is already detected as a known SDK
                         if !knownSDKs.contains(where: { $0.classNames.contains(className) }) {
                             unknownSDKs.append(DetectedSDK(
                                 name: "Unknown Tracking SDK (\(className))",
@@ -1023,21 +1007,17 @@ public final class DependencyScanner {
     }
     
     private func filterAndDeduplicate(_ sdks: [DetectedSDK]) -> [DetectedSDK] {
-        // First pass: remove whitelisted items
         let filtered = sdks.filter { !SDKWhitelist.isWhitelisted($0.name) }
         
-        // Second pass: deduplicate
         var uniqueSDKs: [String: DetectedSDK] = [:]
         
         for sdk in filtered {
             let key = "\(sdk.name)-\(sdk.vendor.rawValue)"
             
             if let existing = uniqueSDKs[key] {
-                // Keep the one with higher confidence, or combine evidence
                 if sdk.confidence > existing.confidence {
                     uniqueSDKs[key] = sdk
                 } else if sdk.confidence == existing.confidence {
-                    // Combine evidence
                     let combinedEvidence = Array(Set(existing.evidence + sdk.evidence))
                     let combined = DetectedSDK(
                         name: existing.name,
@@ -1066,7 +1046,6 @@ public final class DependencyScanner {
             categories.formUnion(sdk.categories)
         }
         
-        // Always include essential
         categories.insert(.essential)
         
         return categories
@@ -1091,7 +1070,6 @@ public final class DependencyScanner {
         let totalConfidence = sdks.reduce(0.0) { $0 + $1.confidence }
         let avgConfidence = totalConfidence / Double(sdks.count)
         
-        // Boost confidence based on number of detection methods used
         let methodBonus = min(Double(methodsUsed.count) * 0.05, 0.3)
         let finalConfidence = min(1.0, avgConfidence + methodBonus)
         
@@ -1109,271 +1087,25 @@ public final class DependencyScanner {
         summary += "• Known SDKs: \(knownCount)\n"
         summary += "• Potential unknown SDKs: \(fuzzyCount)\n"
         
-        // List top 5 highest risk SDKs
         let topRisky = sdks.sorted { $0.riskLevel.priority > $1.riskLevel.priority }.prefix(5)
         if !topRisky.isEmpty {
             summary += "\nHighest Risk SDKs:\n"
             for sdk in topRisky {
-                summary += "  \(sdk.riskLevel.color) \(sdk.name) (\(sdk.riskLevel.rawValue.uppercased()))\n"
+                summary += "  • \(sdk.name) (\(sdk.riskLevel.rawValue.uppercased()))\n"
             }
         }
         
-        // List categories
         let categories = calculateRequiredCategories(from: sdks)
         summary += "\nCategories Required:\n"
         for category in categories {
             summary += "  • \(category.displayName)\n"
         }
         
-        // List detection methods
         summary += "\nDetection Methods Used:\n"
-        for method in methodsUsed.sorted(by: { $0.confidenceWeight > $1.confidenceWeight }) {
-            summary += "  • \(method.description) (confidence: \(Int(method.confidenceWeight * 100))%)\n"
+        for method in methodsUsed {
+            summary += "  • \(method.rawValue)\n"
         }
         
         return summary
-    }
-}
-
-// MARK: - DetectionMethod Extension
-
-extension DetectionMethod {
-    public var confidenceWeight: Double {
-        switch self {
-        case .compileTimeManifest: return 0.95
-        case .classExistence: return 0.90
-        case .selectorCheck: return 0.85
-        case .dyldRuntime: return 0.80
-        case .frameworkBundle: return 0.75
-        case .urlScheme: return 0.70
-        case .infoPlist: return 0.65
-        case .fuzzyPattern: return 0.40
-        }
-    }
-    
-    public var description: String {
-        switch self {
-        case .compileTimeManifest: return "Compile-time Manifest"
-        case .classExistence: return "Class Existence"
-        case .selectorCheck: return "Selector Check"
-        case .dyldRuntime: return "dyld Runtime"
-        case .frameworkBundle: return "Framework Bundle"
-        case .urlScheme: return "URL Scheme"
-        case .infoPlist: return "Info.plist"
-        case .fuzzyPattern: return "Fuzzy Pattern"
-        }
-    }
-}
-
-// MARK: - SDKCategory Extension
-
-extension SDKCategory {
-    public var displayName: String {
-        switch self {
-        case .analytics: return "Analytics"
-        case .advertising: return "Advertising"
-        case .social: return "Social Features"
-        case .location: return "Location Services"
-        case .personalization: return "Personalization"
-        case .performance: return "Performance Monitoring"
-        case .crashReporting: return "Crash Reporting"
-        case .notifications: return "Push Notifications"
-        case .attribution: return "App Attribution"
-        case .authentication: return "Authentication"
-        case .essential: return "Essential"
-        case .unknown: return "Unknown"
-        }
-    }
-}
-
-// MARK: - RiskLevel Extension
-
-extension RiskLevel {
-    public var color: String {
-        switch self {
-        case .low: return "🟢"
-        case .medium: return "🟡"
-        case .high: return "🟠"
-        case .critical: return "🔴"
-        }
-    }
-}
-
-// MARK: - SDKVendor Extension
-
-extension SDKVendor {
-    public var isAdvertisingNetwork: Bool {
-        switch self {
-        case .unity, .ironSource, .appLovin, .vungle, .adColony:
-            return true
-        default:
-            return false
-        }
-    }
-    
-    public var isAnalyticsProvider: Bool {
-        switch self {
-        case .google, .mixpanel, .amplitude, .segment, .countly, .flurry, .appsFlyer, .adjust:
-            return true
-        default:
-            return false
-        }
-    }
-}
-
-// MARK: - SDKWhitelist
-
-public enum SDKWhitelist {
-    public static let systemFrameworks: Set<String> = [
-        "Foundation", "UIKit", "SwiftUI", "Combine",
-        "CoreData", "CoreLocation", "MapKit", "AVFoundation",
-        "CloudKit", "Contacts", "CoreMotion", "HealthKit",
-        "HomeKit", "Messages", "PassKit", "StoreKit",
-        "WebKit", "SafariServices", "AuthenticationServices",
-        "LocalAuthentication", "UserNotifications", "CoreBluetooth",
-        "Network", "Security", "CryptoKit", "CoreGraphics",
-        "QuartzCore", "Metal", "ARKit", "RealityKit",
-        "SceneKit", "SpriteKit", "GameKit", "MultipeerConnectivity",
-        "NearbyInteraction", "Vision", "Speech", "NaturalLanguage",
-        "CoreML", "SoundAnalysis", "CreateML", "CoreImage",
-        "CoreVideo", "CoreMedia", "ImageIO", "ImageCaptureCore",
-        "Photos", "PhotosUI", "AssetsLibrary", "EventKit",
-        "EventKitUI", "AddressBook", "AddressBookUI", "MessageUI",
-        "Social", "Accounts", "AdSupport", "AppTrackingTransparency",
-        "DeviceCheck", "BackgroundTasks", "WidgetKit", "Intents",
-        "IntentsUI", "WatchKit", "HealthKitUI", "HomeKitUI",
-        "UserNotificationsUI",
-        "libswift", "libobjc", "libsystem", "dyld", "libdispatch",
-        "libc", "libpthread", "libz", "libxml2", "libsqlite3",
-        "libicucore", "libcompression", "libnetwork", "libboringssl",
-        "libcorecrypto", "libcommonCrypto"
-    ]
-    
-    public static let safePatterns: Set<String> = [
-        "System/Library", "usr/lib", "AppleInternal",
-        "XCTest", "Xcode", "UnitTest", "UITest",
-        "SnapshotTest", "Mock", "Stub", "Fake",
-        "Debug", "Development", "Internal", "Experimental",
-        "CookiePrime", "CookiePrimeConsent"
-    ]
-    
-    public static let safeLibraries: Set<String> = [
-        "Alamofire", "URLSession", "AFNetworking", "RestKit", "Moya",
-        "SDWebImage", "Kingfisher", "Nuke", "FSPagerView", "TTTAttributedLabel",
-        "SnapKit", "Masonry", "Texture", "IGListKit",
-        "RxSwift", "RxCocoa", "Combine", "ReactiveSwift", "ReactiveCocoa",
-        "Swinject", "Dagger", "Koin", "Resolver", "Dip",
-        "CryptoSwift", "SwiftyJSON", "ObjectMapper", "Codable",
-        "SwiftProtobuf", "GRDB", "SQLite", "Realm", "CoreData",
-        "CocoaLumberjack", "XCGLogger", "SwiftyBeaver", "OSLog", "Logging",
-        "Telemetry", "Metrics", "Stats", "Counter"
-    ]
-    
-    public static var customWhitelist: Set<String> = []
-    
-    public static func isWhitelisted(_ name: String) -> Bool {
-        let lowercased = name.lowercased()
-        
-        if customWhitelist.contains(where: { lowercased.contains($0.lowercased()) }) {
-            return true
-        }
-        
-        for framework in systemFrameworks {
-            if lowercased.contains(framework.lowercased()) {
-                return true
-            }
-        }
-        
-        for pattern in safePatterns {
-            if lowercased.contains(pattern.lowercased()) {
-                return true
-            }
-        }
-        
-        for library in safeLibraries {
-            if lowercased.contains(library.lowercased()) {
-                return true
-            }
-        }
-        
-        return false
-    }
-}
-
-// MARK: - FuzzyPatterns
-
-public enum FuzzyPatterns {
-    public static let trackingSelectors: [String] = [
-        "trackEvent:", "logEvent:", "sendEvent:", "recordEvent:", "log:",
-        "setUserId:", "identify:", "setUserProperty:", "setCustomDimension:",
-        "setCustomMetric:", "startTracking:", "enableTracking:", "disableTracking:",
-        "optIn:", "optOut:", "setConsent:", "updateConsent:", "flush", "submit",
-        "logPurchase:", "logRevenue:", "logError:", "logException:", "crash",
-        "setLocation:", "setGender:", "setAge:", "setBirthYear:", "setEmail:",
-        "setPhoneNumber:", "setName:", "setFirstName:", "setLastName:",
-        "setAddress:", "setCity:", "setCountry:", "setZipCode:",
-        "addTag:", "removeTag:", "setTags:", "increment:", "decrement:",
-        "setOnce:", "unset:", "append:", "prepend:", "union:", "intercept:",
-        "trackScreen:", "trackPage:", "trackInteraction:", "trackClick:",
-        "trackImpression:", "trackConversion:", "trackGoal:", "trackMilestone:",
-        "trackAchievement:", "trackLevel:", "trackScore:", "trackTime:",
-        "trackDuration:", "trackSession:", "trackLaunch:", "trackInstall:",
-        "trackUpdate:", "trackUninstall:"
-    ]
-    
-    public static func matchesTrackingPattern(_ name: String) -> Bool {
-        let lowercased = name.lowercased()
-        let trackingPatterns = [
-            "analytics", "tracker", "tracking", "metrics", "measure",
-            "track", "stats", "count", "log", "monitor", "report",
-            "ads", "advert", "marketing", "promotion", "banner",
-            "social", "share", "login", "auth", "profile", "user",
-            "attribution", "referral", "channel", "source", "campaign",
-            "personalization", "recommend", "suggest", "customize",
-            "location", "geo", "gps", "coordinate", "latitude", "longitude",
-            "push", "notification", "message", "alert",
-            "performance", "crash", "error", "exception", "debug",
-            "event", "action", "behavior", "session", "visit",
-            "purchase", "payment", "revenue", "transaction",
-            "device", "hardware", "model", "os", "screen",
-            "network", "bandwidth", "latency"
-        ]
-        return trackingPatterns.contains { lowercased.contains($0) }
-    }
-    
-    public static func determineCategory(from name: String) -> SDKCategory {
-        let lowercased = name.lowercased()
-        if lowercased.contains("analytics") || lowercased.contains("track") {
-            return .analytics
-        } else if lowercased.contains("advert") || lowercased.contains("ads") {
-            return .advertising
-        } else if lowercased.contains("social") || lowercased.contains("share") {
-            return .social
-        } else if lowercased.contains("location") || lowercased.contains("geo") {
-            return .location
-        } else if lowercased.contains("personalization") || lowercased.contains("recommend") {
-            return .personalization
-        } else if lowercased.contains("performance") || lowercased.contains("monitor") {
-            return .performance
-        } else if lowercased.contains("crash") || lowercased.contains("error") {
-            return .crashReporting
-        } else if lowercased.contains("notification") || lowercased.contains("push") {
-            return .notifications
-        } else if lowercased.contains("attribution") || lowercased.contains("referral") {
-            return .attribution
-        }
-        return .unknown
-    }
-    
-    public static func determineRisk(from name: String) -> RiskLevel {
-        let lowercased = name.lowercased()
-        if lowercased.contains("advert") || lowercased.contains("ads") {
-            return .high
-        } else if lowercased.contains("location") || lowercased.contains("geo") {
-            return .high
-        } else if lowercased.contains("analytics") || lowercased.contains("track") {
-            return .medium
-        }
-        return .low
     }
 }
