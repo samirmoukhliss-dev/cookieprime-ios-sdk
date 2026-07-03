@@ -551,9 +551,11 @@ public final class ConsentSDK: ObservableObject {
 
 // MARK: - ConsentViewControllerDelegate
 #if canImport(UIKit)
-extension ConsentSDK: ConsentViewControllerDelegate {
-    public func consentViewController(_ controller: ConsentViewController,
-                                      didCompleteWithConsent consent: [String: Bool]) {
+extension ConsentSDK: @preconcurrency ConsentViewControllerDelegate {
+    // MARK: - FIXED: Added nonisolated to resolve Swift 6 concurrency warnings
+    
+    nonisolated public func consentViewController(_ controller: ConsentViewController,
+                                                  didCompleteWithConsent consent: [String: Bool]) {
         Task {
             do {
                 try await ConsentSDK.shared.saveConsent(consent, actorId: "user")
@@ -565,14 +567,14 @@ extension ConsentSDK: ConsentViewControllerDelegate {
         }
     }
     
-    public func consentViewControllerDidCancel(_ controller: ConsentViewController) {
+    nonisolated public func consentViewControllerDidCancel(_ controller: ConsentViewController) {
         Task {
             await controller.dismiss(animated: true)
             Logger.log(.debug, "Consent UI cancelled")
         }
     }
     
-    public func consentViewController(_ controller: ConsentViewController, didFailWithError error: Error) {
+    nonisolated public func consentViewController(_ controller: ConsentViewController, didFailWithError error: Error) {
         Logger.log(.error, "Consent UI failed: \(error)")
         Task { @MainActor in
             ConsentSDK.shared.lastError = error as? CookiePrimeError ?? .unknown(error)
