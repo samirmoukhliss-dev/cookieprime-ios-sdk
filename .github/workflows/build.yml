@@ -19,23 +19,21 @@ jobs:
       with:
         xcode-version: '16.2'
     
-    - name: Build XCFramework
+    - name: Build XCFramework with SPM
       run: |
         set -e
         echo "📦 Building CookiePrime iOS SDK XCFramework..."
         
-        # Clean
-        rm -rf build/ || true
-        rm -rf CookiePrimeConsent.xcframework || true
-        
-        # Build for iOS
+        # Build for iOS (device)
         xcodebuild archive \
             -scheme CookiePrimeConsent \
             -destination "generic/platform=iOS" \
             -archivePath build/ios.xcarchive \
             SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            | xcpretty || true
+            -derivedDataPath DerivedData \
+            -scmProvider system \
+            || echo "⚠️ Build failed but continuing..."
         
         # Build for Simulator
         xcodebuild archive \
@@ -44,7 +42,16 @@ jobs:
             -archivePath build/ios-simulator.xcarchive \
             SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            | xcpretty || true
+            -derivedDataPath DerivedData \
+            -scmProvider system \
+            || echo "⚠️ Simulator build failed but continuing..."
+        
+        # Check if builds succeeded
+        if [ ! -d "build/ios.xcarchive" ] || [ ! -d "build/ios-simulator.xcarchive" ]; then
+            echo "❌ Build failed - no archives found"
+            ls -la build/ || echo "No build directory"
+            exit 1
+        fi
         
         # Create XCFramework
         xcodebuild -create-xcframework \
@@ -55,7 +62,7 @@ jobs:
         # Zip
         zip -r CookiePrimeConsent.xcframework.zip CookiePrimeConsent.xcframework
         
-        echo "✅ Build complete: CookiePrimeConsent.xcframework.zip"
+        echo "✅ Build complete!"
         ls -la CookiePrimeConsent.xcframework.zip
     
     - name: Upload Artifact
