@@ -19,93 +19,47 @@ jobs:
       with:
         xcode-version: '16.2'
     
-    - name: Create Package.swift
-      run: |
-        cat > Package.swift << 'EOF'
-        // swift-tools-version:5.9
-        import PackageDescription
-
-        let package = Package(
-            name: "CookiePrimeConsent",
-            platforms: [
-                .iOS(.v14)
-            ],
-            products: [
-                .library(
-                    name: "CookiePrimeConsent",
-                    targets: ["CookiePrimeConsent"]
-                )
-            ],
-            dependencies: [],
-            targets: [
-                .target(
-                    name: "CookiePrimeConsent",
-                    path: "Sources/CookiePrimeConsent",
-                    resources: [
-                        .process("Resources")
-                    ],
-                    swiftSettings: [
-                        .define("DEBUG", .when(configuration: .debug))
-                    ]
-                )
-            ]
-        )
-        EOF
-        echo "✅ Package.swift created"
-    
-    - name: Build XCFramework (Debug)
+    - name: Build XCFramework
       run: |
         set -e
-        echo "📦 Building CookiePrime iOS SDK XCFramework in Debug mode..."
-        echo "📁 Sources: $(find Sources -name "*.swift" | wc -l | xargs) Swift files"
+        echo "📦 Building CookiePrime iOS SDK XCFramework..."
         
-        # Build for iOS (device)
-        echo "📱 Building for iOS..."
-        xcodebuild archive \
+        # Build for iOS device
+        echo "📱 Building for iOS device..."
+        xcodebuild build \
             -scheme CookiePrimeConsent \
-            -configuration Debug \
+            -configuration Release \
             -destination "generic/platform=iOS" \
-            -archivePath build/ios.xcarchive \
-            SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            SKIP_INSTALL=NO \
             -derivedDataPath DerivedData \
             -quiet || { echo "❌ iOS build failed"; exit 1; }
-        echo "✅ iOS build succeeded"
         
-        # Build for Simulator
+        # Build for iOS Simulator
         echo "📱 Building for iOS Simulator..."
-        xcodebuild archive \
+        xcodebuild build \
             -scheme CookiePrimeConsent \
-            -configuration Debug \
+            -configuration Release \
             -destination "generic/platform=iOS Simulator" \
-            -archivePath build/ios-simulator.xcarchive \
-            SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            SKIP_INSTALL=NO \
             -derivedDataPath DerivedData \
             -quiet || { echo "❌ Simulator build failed"; exit 1; }
-        echo "✅ Simulator build succeeded"
         
-        # Find the actual framework paths
-        echo "🔍 Finding framework paths..."
+        # Find the built frameworks
+        IOS_FRAMEWORK=$(find DerivedData/Build/Products/Release-iphoneos -name "*.framework" -type d | head -1)
+        SIM_FRAMEWORK=$(find DerivedData/Build/Products/Release-iphonesimulator -name "*.framework" -type d | head -1)
         
-        # For iOS device
-        IOS_FRAMEWORK=$(find build/ios.xcarchive -name "*.framework" -type d | head -1)
-        if [ -z "$IOS_FRAMEWORK" ]; then
-            echo "❌ No framework found in iOS archive"
-            echo "Contents of iOS archive:"
-            find build/ios.xcarchive -type d | head -20
+        if [ -z "$IOS_FRAMEWORK" ] || [ -z "$SIM_FRAMEWORK" ]; then
+            echo "❌ Could not find frameworks"
+            echo "iOS path contents:"
+            find DerivedData/Build/Products/Release-iphoneos -type d | head -10
+            echo "Simulator path contents:"
+            find DerivedData/Build/Products/Release-iphonesimulator -type d | head -10
             exit 1
         fi
+        
         echo "iOS framework: $IOS_FRAMEWORK"
-        
-        # For Simulator
-        SIM_FRAMEWORK=$(find build/ios-simulator.xcarchive -name "*.framework" -type d | head -1)
-        if [ -z "$SIM_FRAMEWORK" ]; then
-            echo "❌ No framework found in Simulator archive"
-            echo "Contents of Simulator archive:"
-            find build/ios-simulator.xcarchive -type d | head -20
-            exit 1
-        fi
         echo "Simulator framework: $SIM_FRAMEWORK"
         
         # Create XCFramework
@@ -114,15 +68,10 @@ jobs:
             -framework "$IOS_FRAMEWORK" \
             -framework "$SIM_FRAMEWORK" \
             -output CookiePrimeConsent.xcframework || { echo "❌ XCFramework creation failed"; exit 1; }
-        echo "✅ XCFramework created"
         
-        # Zip
-        zip -r CookiePrimeConsent.xcframework.zip CookiePrimeConsent.xcframework > /dev/null
-        echo "✅ Zip complete"
-        
-        # Show final output
-        echo "📦 Build artifacts:"
-        ls -lh CookiePrimeConsent.xcframework.zip
+        # Zip it
+        zip -r CookiePrimeConsent.xcframework.zip CookiePrimeConsent.xcframework
+        echo "✅ Build complete! Size: $(du -h CookiePrimeConsent.xcframework.zip | cut -f1)"
     
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
