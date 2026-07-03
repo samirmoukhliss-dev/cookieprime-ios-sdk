@@ -1,4 +1,7 @@
 // FILE: Sources/CookiePrimeConsent/Network/NetworkModels.swift
+#if canImport(UIKit)
+import UIKit
+#endif
 import Foundation
 
 // MARK: - Request Models
@@ -279,8 +282,3 @@ public struct BatchResponse: Codable, Sendable {
         self.responses = responses
     }
 }
-
-// MARK: - Empty Body
-
-/// Empty body for GET requests
-public struct EmptyBody: Encodable {}
