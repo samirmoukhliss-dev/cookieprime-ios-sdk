@@ -24,7 +24,7 @@ public struct RetryPolicy: Sendable {
     public let retryableStatusCodes: Set<Int>
     
     /// Retryable error types
-    public let retryableErrors: Set<NetworkError>
+    public let retryableErrors: [NetworkError]  // Changed from Set<NetworkError> to Array
     
     // MARK: - Initialization
     
@@ -35,7 +35,7 @@ public struct RetryPolicy: Sendable {
         backoffMultiplier: Double = 2.0,
         jitterFactor: Double = 0.1,
         retryableStatusCodes: Set<Int> = [408, 429, 500, 502, 503, 504],
-        retryableErrors: Set<NetworkError> = [
+        retryableErrors: [NetworkError] = [
             .noInternetConnection,
             .timeout,
             .connectionLost
@@ -193,6 +193,8 @@ public protocol RetryHandler: Sendable {
 
 /// Default retry handler with logging
 public struct DefaultRetryHandler: RetryHandler {
+    public init() {}  // Public initializer
+    
     public func willRetry(context: RetryContext) async {
         let delay = String(format: "%.2f", context.delay)
         let errorDesc = context.error.map { " (\($0.localizedDescription))" } ?? ""
