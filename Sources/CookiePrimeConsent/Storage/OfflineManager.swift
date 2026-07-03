@@ -220,24 +220,24 @@ public final class OfflineManager: ObservableObject {
     }
 }
 
-// MARK: - Pending Operation Convenience
+// Add this extension outside the OfflineManager class:
 
 extension OfflineManager.PendingOperation {
     /// Create a consent upload operation
-    public static func consentUpload(record: ConsentRecord) throws -> Self {
+    public static func consentUpload(record: ConsentRecord) throws -> OfflineManager.PendingOperation {
         let data = try JSONEncoder().encode(record)
-        return PendingOperation(type: .consentUpload, data: data)
+        return OfflineManager.PendingOperation(type: .consentUpload, data: data)
     }
     
     /// Create a detection upload operation
-    public static func detectionUpload(detectionResult: DependencyScanner.ScanResult) throws -> Self {
+    public static func detectionUpload(detectionResult: DependencyScanner.ScanResult) throws -> OfflineManager.PendingOperation {
         let data = try JSONEncoder().encode(detectionResult)
-        return PendingOperation(type: .detectionUpload, data: data)
+        return OfflineManager.PendingOperation(type: .detectionUpload, data: data)
     }
     
     /// Create a config sync operation
-    public static func configSync(config: Data) -> Self {
-        return PendingOperation(type: .configSync, data: config)
+    public static func configSync(config: Data) -> OfflineManager.PendingOperation {
+        return OfflineManager.PendingOperation(type: .configSync, data: config)
     }
 }
 
