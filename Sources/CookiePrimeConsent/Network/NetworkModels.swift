@@ -106,7 +106,13 @@ public struct DeviceInfo: Codable, Sendable {
     public init(
         platform: String = "iOS",
         osVersion: String = ProcessInfo.processInfo.operatingSystemVersionString,
-        deviceModel: String = UIDevice.current.model,
+        deviceModel: String = {
+            #if canImport(UIKit)
+            return UIDevice.current.model
+            #else
+            return "Unknown"
+            #endif
+        }(),
         appVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
         sdkVersion: String = "1.0.0",
         locale: String = Locale.current.identifier,
@@ -273,3 +279,8 @@ public struct BatchResponse: Codable, Sendable {
         self.responses = responses
     }
 }
+
+// MARK: - Empty Body
+
+/// Empty body for GET requests
+public struct EmptyBody: Encodable {}
