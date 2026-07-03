@@ -10,7 +10,7 @@ public struct ConsentView: View {
     // MARK: - Properties
     
     @StateObject private var viewModel: ConsentViewModel
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.presentationMode) private var presentationMode
     @State private var showingError = false
     @State private var errorMessage = ""
     
@@ -45,7 +45,7 @@ public struct ConsentView: View {
             .navigationBarHidden(true)
             .background(Color(.systemBackground))
             .overlay(loadingOverlay)
-            .onChange(of: viewModel.hasChanges) { hasChanges in
+            .onChange(of: viewModel.hasChanges) { _ in
                 // Update navigation bar if needed
             }
         }
@@ -110,7 +110,7 @@ public struct ConsentView: View {
                 Task { @MainActor in
                     do {
                         try await viewModel.saveConsent()
-                        dismiss()
+                        presentationMode.wrappedValue.dismiss()
                     } catch {
                         errorMessage = error.localizedDescription
                         showingError = true
@@ -155,7 +155,7 @@ public struct ConsentView: View {
                 .multilineTextAlignment(.center)
             
             Button("Dismiss") {
-                viewModel.error = nil
+                viewModel.clearError()
             }
             .font(.caption)
             .foregroundColor(.blue)
