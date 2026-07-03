@@ -8,9 +8,6 @@ public final class TelemetryService {
     // MARK: - Singleton
     
     public static let shared = TelemetryService()
-    private init() {
-        startSession()
-    }
     
     // MARK: - Types
     
@@ -36,7 +33,20 @@ public final class TelemetryService {
     private var storedEvents: [TelemetryEvent] = []
     private let maxStoredEvents = 1000
     
-    // MARK: - Initialization
+    // MARK: - Initialization - FIXED
+    
+    private init() {
+        // Initialize userDefaults FIRST before calling any other methods
+        self.userDefaults = UserDefaults.standard
+        
+        // Load stored events
+        loadStoredEvents()
+        
+        // Now start the session
+        startSession()
+    }
+    
+    // MARK: - Private Methods
     
     private func startSession() {
         logEvent("session_start", properties: [
@@ -246,11 +256,6 @@ public final class TelemetryService {
         return telemetryQueue.sync { storedEvents.last?.timestamp }
     }
     
-    // MARK: - FIXED: Changed from internal to private
-    private func getAllEvents() -> [TelemetryEvent] {
-        return telemetryQueue.sync { storedEvents }
-    }
-    
     public func clearEvents() {
         telemetryQueue.sync {
             storedEvents.removeAll()
@@ -260,16 +265,18 @@ public final class TelemetryService {
     // MARK: - Private Helpers
     
     private func storeEvent(_ event: TelemetryEvent) {
-        storedEvents.append(event)
-        
-        // Keep only last maxStoredEvents
-        if storedEvents.count > maxStoredEvents {
-            storedEvents.removeFirst(storedEvents.count - maxStoredEvents)
-        }
-        
-        // Store to UserDefaults for persistence
-        if let data = try? JSONEncoder().encode(storedEvents) {
-            userDefaults.set(data, forKey: "cookieprime_telemetry_events")
+        telemetryQueue.sync {
+            storedEvents.append(event)
+            
+            // Keep only last maxStoredEvents
+            if storedEvents.count > maxStoredEvents {
+                storedEvents.removeFirst(storedEvents.count - maxStoredEvents)
+            }
+            
+            // Store to UserDefaults for persistence
+            if let data = try? JSONEncoder().encode(storedEvents) {
+                userDefaults.set(data, forKey: "cookieprime_telemetry_events")
+            }
         }
     }
     
