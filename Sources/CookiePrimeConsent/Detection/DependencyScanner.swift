@@ -1,6 +1,25 @@
 // FILE: Sources/CookiePrimeConsent/Detection/DependencyScanner.swift
 import Foundation
-import Darwin  // ADD THIS LINE for _dyld_image_count and _dyld_get_image_name
+import Darwin
+import ObjectiveC
+
+// MARK: - Dyld Runtime Functions
+// These functions are from <mach-o/dyld.h> and need to be declared for Swift
+@_silgen_name("_dyld_image_count")
+func _dyld_image_count() -> UInt32
+
+@_silgen_name("_dyld_get_image_name")
+func _dyld_get_image_name(_ index: UInt32) -> UnsafePointer<CChar>?
+
+// Also declare the function we use for class enumeration
+@_silgen_name("objc_copyClassList")
+func objc_copyClassList(_ count: UnsafeMutablePointer<UInt32>?) -> UnsafeMutablePointer<AnyClass>?
+
+@_silgen_name("class_respondsToSelector")
+func class_respondsToSelector(_ cls: AnyClass?, _ sel: Selector?) -> Bool
+
+@_silgen_name("class_getName")
+func class_getName(_ cls: AnyClass?) -> UnsafePointer<CChar>?
 
 #if canImport(UIKit)
 import UIKit
@@ -659,7 +678,7 @@ public final class DependencyScanner {
         Logger.log(.info, "   • Known SDKs: \(filteredSDKs.filter { $0.detectionMethod != .fuzzyPattern }.count)")
         Logger.log(.info, "   • Fuzzy detected: \(filteredSDKs.filter { $0.detectionMethod == .fuzzyPattern }.count)")
         Logger.log(.info, "   • Required categories: \(requiredCategories.map { $0.displayName })")
-        Logger.log(.info, "   • Overall risk: \(overallRisk)")  // Removed .color
+        Logger.log(.info, "   • Overall risk: \(overallRisk)")
         Logger.log(.info, "   • Confidence: \(Int(confidence * 100))%")
         
         return result
