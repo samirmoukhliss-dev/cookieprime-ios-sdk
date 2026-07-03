@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14  # Use specific macOS version instead of latest
+    runs-on: macos-14
     
     steps:
     - name: Checkout
@@ -17,23 +17,46 @@ jobs:
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: '16.2'  # Use a version that exists on macos-14
-    
-    - name: Create Scripts directory
-      run: mkdir -p Scripts
-    
-    - name: Create Build Script
-      run: |
-        cat > Scripts/build_xcframework.sh << 'EOF'
-        #!/bin/bash
-        echo "📦 Building CookiePrime XCFramework..."
-        # Your full build script here
-        exit 0
-        EOF
-        chmod +x Scripts/build_xcframework.sh
+        xcode-version: '16.2'
     
     - name: Build XCFramework
-      run: ./Scripts/build_xcframework.sh
+      run: |
+        set -e
+        echo "📦 Building CookiePrime iOS SDK XCFramework..."
+        
+        # Clean
+        rm -rf build/ || true
+        rm -rf CookiePrimeConsent.xcframework || true
+        
+        # Build for iOS
+        xcodebuild archive \
+            -scheme CookiePrimeConsent \
+            -destination "generic/platform=iOS" \
+            -archivePath build/ios.xcarchive \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            | xcpretty || true
+        
+        # Build for Simulator
+        xcodebuild archive \
+            -scheme CookiePrimeConsent \
+            -destination "generic/platform=iOS Simulator" \
+            -archivePath build/ios-simulator.xcarchive \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            | xcpretty || true
+        
+        # Create XCFramework
+        xcodebuild -create-xcframework \
+            -framework build/ios.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework \
+            -framework build/ios-simulator.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework \
+            -output CookiePrimeConsent.xcframework
+        
+        # Zip
+        zip -r CookiePrimeConsent.xcframework.zip CookiePrimeConsent.xcframework
+        
+        echo "✅ Build complete: CookiePrimeConsent.xcframework.zip"
+        ls -la CookiePrimeConsent.xcframework.zip
     
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
@@ -42,7 +65,8 @@ jobs:
         path: CookiePrimeConsent.xcframework.zip
     
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
       with:
         files: |
           CookiePrimeConsent.xcframework.zip
