@@ -49,10 +49,10 @@ public enum Logger {
     public static var includeTimestamps = true
     
     /// Whether to include file/line information (default: true in debug)
-    public static var includeSourceInfo = false
-    
     #if DEBUG
     public static var includeSourceInfo = true
+    #else
+    public static var includeSourceInfo = false
     #endif
     
     /// Whether to write logs to file (default: false)
