@@ -24,7 +24,7 @@ jobs:
         set -e
         echo "📦 Building CookiePrime iOS SDK XCFramework..."
         
-        # Build for iOS device using xcodebuild build (not archive)
+        # Build for iOS device
         echo "📱 Building for iOS device..."
         xcodebuild build \
             -scheme CookiePrimeConsent \
@@ -70,16 +70,23 @@ jobs:
         # Create framework structure
         echo "📦 Creating framework structure..."
         
-        # iOS framework
+        # Create directories for iOS framework
         mkdir -p build/ios/CookiePrimeConsent.framework/Modules
+        mkdir -p build/ios/CookiePrimeConsent.framework/Headers
+        
+        # Create directories for Simulator framework
+        mkdir -p build/ios-simulator/CookiePrimeConsent.framework/Modules
+        mkdir -p build/ios-simulator/CookiePrimeConsent.framework/Headers
+        
+        # Copy object files
         cp "$IOS_OBJ" build/ios/CookiePrimeConsent.framework/CookiePrimeConsent
+        cp "$SIM_OBJ" build/ios-simulator/CookiePrimeConsent.framework/CookiePrimeConsent
+        
+        # Copy module files
         if [ -d "$IOS_MODULE" ]; then
             cp -r "$IOS_MODULE"/* build/ios/CookiePrimeConsent.framework/Modules/
         fi
         
-        # Simulator framework
-        mkdir -p build/ios-simulator/CookiePrimeConsent.framework/Modules
-        cp "$SIM_OBJ" build/ios-simulator/CookiePrimeConsent.framework/CookiePrimeConsent
         if [ -d "$SIM_MODULE" ]; then
             cp -r "$SIM_MODULE"/* build/ios-simulator/CookiePrimeConsent.framework/Modules/
         fi
@@ -121,8 +128,12 @@ jobs:
         
         cp build/ios/CookiePrimeConsent.framework/Modules/module.modulemap build/ios-simulator/CookiePrimeConsent.framework/Modules/module.modulemap
         
-        # Create empty header
-        touch build/ios/CookiePrimeConsent.framework/Headers/CookiePrimeConsent.h
+        # Create empty header file
+        cat > build/ios/CookiePrimeConsent.framework/Headers/CookiePrimeConsent.h << 'EOF'
+        // CookiePrimeConsent framework header
+        // This is a Swift-only framework
+        EOF
+        
         cp build/ios/CookiePrimeConsent.framework/Headers/CookiePrimeConsent.h build/ios-simulator/CookiePrimeConsent.framework/Headers/
         
         # Create XCFramework
@@ -135,7 +146,7 @@ jobs:
         
         # Verify XCFramework
         echo "📦 Verifying XCFramework..."
-        find CookiePrimeConsent.xcframework -type d | head -10
+        find CookiePrimeConsent.xcframework -type f | head -10
         
         # Zip
         echo "📦 Zipping XCFramework..."
