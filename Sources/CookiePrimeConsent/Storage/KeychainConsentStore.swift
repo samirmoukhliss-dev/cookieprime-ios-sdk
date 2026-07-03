@@ -63,7 +63,8 @@ public final class KeychainConsentStore: ConsentStore {
         // Save simplified statuses
         for (category, granted) in consent {
             let key = Keys.consentPrefix + category
-            try saveToKeychain(data: Data(granted ? "true" : "false".utf8), key: key)
+            let data = granted ? Data("true".utf8) : Data("false".utf8)
+            try saveToKeychain(data: data, key: key)
         }
         
         // Update last seen
@@ -101,7 +102,6 @@ public final class KeychainConsentStore: ConsentStore {
     public func getAllConsentStatuses() async throws -> [String: ConsentStatus] {
         var statuses: [String: ConsentStatus] = [:]
         
-        // This is inefficient for keychain, but works for small datasets
         let allKeys = try getAllKeychainKeys()
         
         for key in allKeys where key.hasPrefix(Keys.consentPrefix) {
@@ -248,17 +248,17 @@ public final class KeychainConsentStore: ConsentStore {
         let query = buildQuery(key: key)
         
         // Check if item exists
-        var status = SecItemCopyMatching(query, nil)
+        var status = SecItemCopyMatching(query as CFDictionary, nil)
         
         if status == errSecSuccess {
             // Update existing item
             let updateQuery = buildUpdateQuery(data: data, key: key)
-            status = SecItemUpdate(query, updateQuery)
+            status = SecItemUpdate(query as CFDictionary, updateQuery as CFDictionary)
         } else {
             // Add new item
             var newQuery = query
             newQuery[kSecValueData as String] = data
-            status = SecItemAdd(newQuery, nil)
+            status = SecItemAdd(newQuery as CFDictionary, nil)
         }
         
         guard status == errSecSuccess else {
@@ -271,7 +271,7 @@ public final class KeychainConsentStore: ConsentStore {
         query[kSecReturnData as String] = true
         
         var result: CFTypeRef?
-        let status = SecItemCopyMatching(query, &result)
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
         
         guard status != errSecItemNotFound else {
             return nil
@@ -286,7 +286,7 @@ public final class KeychainConsentStore: ConsentStore {
     
     private func deleteFromKeychain(key: String) throws {
         let query = buildQuery(key: key)
-        let status = SecItemDelete(query)
+        let status = SecItemDelete(query as CFDictionary)
         
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw ConsentStoreError.storageError("Keychain delete failed: \(status)")
@@ -297,7 +297,8 @@ public final class KeychainConsentStore: ConsentStore {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecReturnAttributes as String: true,
-            kSecMatchLimit as String: kSecMatchLimitAll
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecAttrService as String: service
         ]
         
         if let accessGroup = accessGroup {
@@ -305,7 +306,7 @@ public final class KeychainConsentStore: ConsentStore {
         }
         
         var result: CFTypeRef?
-        let status = SecItemCopyMatching(query, &result)
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
         
         guard status == errSecSuccess else {
             return []
