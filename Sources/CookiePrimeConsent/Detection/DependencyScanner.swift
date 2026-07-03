@@ -2,10 +2,30 @@
 import Foundation
 import Darwin
 
-/// Main dependency scanner for detecting SDKs in the application
+#if canImport(UIKit)
+import UIKit
+#endif
+
 public final class DependencyScanner {
     
     // MARK: - Types
+    
+    public enum RiskLevel: String, Codable, Sendable {
+        case low, medium, high, critical
+        
+        public var priority: Int {
+            switch self {
+            case .low: return 1
+            case .medium: return 2
+            case .high: return 3
+            case .critical: return 4
+            }
+        }
+        
+        public static func > (lhs: RiskLevel, rhs: RiskLevel) -> Bool {
+            return lhs.priority > rhs.priority
+        }
+    }
     
     public struct DetectedSDK: Identifiable, Codable, Sendable {
         public let id: String
@@ -40,6 +60,17 @@ public final class DependencyScanner {
         }
     }
     
+    public enum DetectionMethod: String, Codable, Sendable {
+        case classExistence = "class_existence"
+        case dyldRuntime = "dyld_runtime"
+        case selectorCheck = "selector_check"
+        case frameworkBundle = "framework_bundle"
+        case urlScheme = "url_scheme"
+        case infoPlist = "info_plist"
+        case fuzzyPattern = "fuzzy_pattern"
+        case compileTimeManifest = "compile_time_manifest"
+    }
+    
     public struct ScanResult: Sendable, Codable {
         public let detectedSDKs: [DetectedSDK]
         public let requiredCategories: Set<SDKCategory>
@@ -56,16 +87,460 @@ public final class DependencyScanner {
             detectedSDKs.filter { $0.detectionMethod == .fuzzyPattern }
         }
         
-        public var totalCount: Int {
-            detectedSDKs.count
+        public init(
+            detectedSDKs: [DetectedSDK],
+            requiredCategories: Set<SDKCategory>,
+            overallRisk: RiskLevel,
+            confidence: Double,
+            timestamp: Date,
+            detectionSummary: String
+        ) {
+            self.detectedSDKs = detectedSDKs
+            self.requiredCategories = requiredCategories
+            self.overallRisk = overallRisk
+            self.confidence = confidence
+            self.timestamp = timestamp
+            self.detectionSummary = detectionSummary
         }
     }
+    
+    // MARK: - Known SDKs Database (40+ SDKs)
+    
+    private struct KnownSDK {
+        let name: String
+        let vendor: SDKVendor
+        let classNames: [String]
+        let selectorNames: [String]?
+        let bundleIdentifiers: [String]?
+        let urlSchemes: [String]?
+        let categories: Set<SDKCategory>
+        let riskLevel: RiskLevel
+        let commonPatterns: [String]?
+        let infoPlistKeys: [String]?
+    }
+    
+    private let knownSDKs: [KnownSDK] = [
+        // ========== GOOGLE/FIREBASE ==========
+        KnownSDK(
+            name: "Firebase Analytics",
+            vendor: .google,
+            classNames: ["FIRAnalytics", "FirebaseAnalytics", "Analytics"],
+            selectorNames: ["logEventWithName:parameters:", "setAnalyticsCollectionEnabled:"],
+            bundleIdentifiers: ["com.google.firebase.analytics"],
+            urlSchemes: nil,
+            categories: [.analytics, .performance],
+            riskLevel: .medium,
+            commonPatterns: ["Firebase", "FIR"],
+            infoPlistKeys: ["FIREBASE_ANALYTICS_COLLECTION_ENABLED"]
+        ),
+        KnownSDK(
+            name: "Firebase Crashlytics",
+            vendor: .google,
+            classNames: ["Crashlytics", "FIRCrashlytics"],
+            selectorNames: ["crash", "log:"],
+            bundleIdentifiers: ["com.google.firebase.crashlytics"],
+            urlSchemes: nil,
+            categories: [.crashReporting, .analytics],
+            riskLevel: .low,
+            commonPatterns: ["Crashlytics"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Firebase Performance",
+            vendor: .google,
+            classNames: ["FIRPerformance", "FirebasePerformance"],
+            selectorNames: ["startTrace:", "stopTrace:"],
+            bundleIdentifiers: ["com.google.firebase.perf"],
+            urlSchemes: nil,
+            categories: [.performance],
+            riskLevel: .low,
+            commonPatterns: ["Performance", "Perf"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Firebase Cloud Messaging",
+            vendor: .google,
+            classNames: ["FIRMessaging", "FirebaseMessaging"],
+            selectorNames: ["subscribeToTopic:", "unsubscribeFromTopic:"],
+            bundleIdentifiers: ["com.google.firebase.messaging"],
+            urlSchemes: nil,
+            categories: [.notifications, .analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Messaging", "FCM"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Google Analytics (Legacy)",
+            vendor: .google,
+            classNames: ["GAITracker", "GAI"],
+            selectorNames: ["send:", "track:"],
+            bundleIdentifiers: ["com.google.analytics"],
+            urlSchemes: nil,
+            categories: [.analytics],
+            riskLevel: .medium,
+            commonPatterns: ["GoogleAnalytics", "GAI"],
+            infoPlistKeys: nil
+        ),
+        
+        // ========== FACEBOOK/META ==========
+        KnownSDK(
+            name: "Facebook SDK",
+            vendor: .meta,
+            classNames: ["FBSDKCoreKit", "FBSDKApplicationDelegate"],
+            selectorNames: ["setAutoLogAppEventsEnabled:", "initializeSDK:"],
+            bundleIdentifiers: ["com.facebook.sdk.CoreKit"],
+            urlSchemes: ["fbapi", "fbauth2", "fbshareextension"],
+            categories: [.analytics, .advertising, .social],
+            riskLevel: .high,
+            commonPatterns: ["FBSDK", "Facebook"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Facebook Login",
+            vendor: .meta,
+            classNames: ["FBSDKLoginKit", "FBSDKLoginManager"],
+            selectorNames: ["logInWithPermissions:fromViewController:handler:"],
+            bundleIdentifiers: ["com.facebook.sdk.LoginKit"],
+            urlSchemes: nil,
+            categories: [.social, .authentication],
+            riskLevel: .medium,
+            commonPatterns: ["FBLogin"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Facebook Audience Network",
+            vendor: .meta,
+            classNames: ["FBAudienceNetworkAds"],
+            selectorNames: ["initializeWithSettings:"],
+            bundleIdentifiers: ["com.facebook.audience"],
+            urlSchemes: nil,
+            categories: [.advertising],
+            riskLevel: .high,
+            commonPatterns: ["AudienceNetwork", "FAN"],
+            infoPlistKeys: nil
+        ),
+        
+        // ========== ADVERTISING NETWORKS ==========
+        KnownSDK(
+            name: "Google AdMob",
+            vendor: .google,
+            classNames: ["GADMobileAds", "GADBannerView", "GADInterstitialAd"],
+            selectorNames: ["startWithCompletionHandler:", "loadRequest:"],
+            bundleIdentifiers: ["com.google.ads"],
+            urlSchemes: ["googleads"],
+            categories: [.advertising],
+            riskLevel: .high,
+            commonPatterns: ["GAD", "GoogleMobileAds"],
+            infoPlistKeys: ["GADApplicationIdentifier"]
+        ),
+        KnownSDK(
+            name: "Unity Ads",
+            vendor: .unity,
+            classNames: ["UnityAds", "UnityAdsDelegate"],
+            selectorNames: ["initialize:delegate:testMode:"],
+            bundleIdentifiers: ["com.unity3d.ads"],
+            urlSchemes: nil,
+            categories: [.advertising],
+            riskLevel: .high,
+            commonPatterns: ["UnityAds"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "AppLovin",
+            vendor: .appLovin,
+            classNames: ["ALSdk", "ALAdView"],
+            selectorNames: ["initializeSdk"],
+            bundleIdentifiers: ["com.applovin.sdk"],
+            urlSchemes: nil,
+            categories: [.advertising],
+            riskLevel: .high,
+            commonPatterns: ["AppLovin", "AL"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "IronSource",
+            vendor: .ironSource,
+            classNames: ["IronSource", "ISIntegrationHelper"],
+            selectorNames: ["initWithAppKey:"],
+            bundleIdentifiers: ["com.ironsource.sdk"],
+            urlSchemes: nil,
+            categories: [.advertising],
+            riskLevel: .high,
+            commonPatterns: ["IronSource", "IS"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Vungle",
+            vendor: .vungle,
+            classNames: ["VungleSDK"],
+            selectorNames: ["startWithAppId:"],
+            bundleIdentifiers: ["com.vungle"],
+            urlSchemes: nil,
+            categories: [.advertising],
+            riskLevel: .high,
+            commonPatterns: ["Vungle"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "AdColony",
+            vendor: .adColony,
+            classNames: ["AdColony"],
+            selectorNames: ["configureWithAppID:zoneIDs:options:completion:"],
+            bundleIdentifiers: ["com.adcolony"],
+            urlSchemes: nil,
+            categories: [.advertising],
+            riskLevel: .high,
+            commonPatterns: ["AdColony"],
+            infoPlistKeys: nil
+        ),
+        
+        // ========== ANALYTICS & ATTRIBUTION ==========
+        KnownSDK(
+            name: "AppsFlyer",
+            vendor: .appsFlyer,
+            classNames: ["AppsFlyerLib"],
+            selectorNames: ["start", "trackEvent:withValues:"],
+            bundleIdentifiers: ["com.appsflyer"],
+            urlSchemes: nil,
+            categories: [.analytics, .advertising, .attribution],
+            riskLevel: .high,
+            commonPatterns: ["AppsFlyer"],
+            infoPlistKeys: ["AppsFlyerAppId"]
+        ),
+        KnownSDK(
+            name: "Adjust",
+            vendor: .adjust,
+            classNames: ["Adjust"],
+            selectorNames: ["appDidLaunch:", "trackEvent:"],
+            bundleIdentifiers: ["com.adjust"],
+            urlSchemes: nil,
+            categories: [.analytics, .advertising, .attribution],
+            riskLevel: .high,
+            commonPatterns: ["Adjust"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Branch",
+            vendor: .branch,
+            classNames: ["Branch"],
+            selectorNames: ["initSession", "setIdentity:"],
+            bundleIdentifiers: ["io.branch"],
+            urlSchemes: nil,
+            categories: [.analytics, .attribution],
+            riskLevel: .medium,
+            commonPatterns: ["Branch"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Mixpanel",
+            vendor: .mixpanel,
+            classNames: ["Mixpanel"],
+            selectorNames: ["track:properties:", "identify:"],
+            bundleIdentifiers: ["com.mixpanel"],
+            urlSchemes: nil,
+            categories: [.analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Mixpanel"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Amplitude",
+            vendor: .amplitude,
+            classNames: ["Amplitude"],
+            selectorNames: ["trackEvent:withProperties:"],
+            bundleIdentifiers: ["com.amplitude"],
+            urlSchemes: nil,
+            categories: [.analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Amplitude"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Segment",
+            vendor: .segment,
+            classNames: ["SEGAnalytics", "SEGSegmentIntegration"],
+            selectorNames: ["track:properties:"],
+            bundleIdentifiers: ["com.segment"],
+            urlSchemes: nil,
+            categories: [.analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Segment"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Countly",
+            vendor: .countly,
+            classNames: ["Countly"],
+            selectorNames: ["recordEvent:", "recordCustomEvent:"],
+            bundleIdentifiers: ["com.countly"],
+            urlSchemes: nil,
+            categories: [.analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Countly"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Flurry",
+            vendor: .flurry,
+            classNames: ["Flurry"],
+            selectorNames: ["logEvent:withParameters:"],
+            bundleIdentifiers: ["com.flurry"],
+            urlSchemes: nil,
+            categories: [.analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Flurry"],
+            infoPlistKeys: nil
+        ),
+        
+        // ========== NOTIFICATIONS ==========
+        KnownSDK(
+            name: "OneSignal",
+            vendor: .onesignal,
+            classNames: ["OneSignal", "OSNotification"],
+            selectorNames: ["initWithLaunchOptions:appId:", "sendTags:"],
+            bundleIdentifiers: ["com.onesignal"],
+            urlSchemes: nil,
+            categories: [.notifications, .analytics],
+            riskLevel: .medium,
+            commonPatterns: ["OneSignal"],
+            infoPlistKeys: ["OneSignal_app_id"]
+        ),
+        KnownSDK(
+            name: "Braze",
+            vendor: .braze,
+            classNames: ["Braze", "Appboy"],
+            selectorNames: ["logCustomEvent:withProperties:"],
+            bundleIdentifiers: ["com.braze"],
+            urlSchemes: nil,
+            categories: [.notifications, .analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Braze", "Appboy"],
+            infoPlistKeys: nil
+        ),
+        
+        // ========== SOCIAL ==========
+        KnownSDK(
+            name: "Twitter Kit",
+            vendor: .unknown,
+            classNames: ["Twitter", "TWTRKit"],
+            selectorNames: ["logInWithCompletion:"],
+            bundleIdentifiers: ["com.twitter.sdk"],
+            urlSchemes: nil,
+            categories: [.social, .analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Twitter", "TWTR"],
+            infoPlistKeys: nil
+        ),
+        
+        // ========== LOCATION ==========
+        KnownSDK(
+            name: "Google Location Services",
+            vendor: .google,
+            classNames: ["GMSLocation", "CLLocationManager"],
+            selectorNames: ["startUpdatingLocation"],
+            bundleIdentifiers: ["com.google.location"],
+            urlSchemes: nil,
+            categories: [.location],
+            riskLevel: .high,
+            commonPatterns: ["Location", "GMS"],
+            infoPlistKeys: nil
+        ),
+        
+        // ========== CRASH REPORTING ==========
+        KnownSDK(
+            name: "Sentry",
+            vendor: .unknown,
+            classNames: ["Sentry"],
+            selectorNames: ["captureError:", "captureException:"],
+            bundleIdentifiers: ["io.sentry"],
+            urlSchemes: nil,
+            categories: [.crashReporting, .analytics],
+            riskLevel: .low,
+            commonPatterns: ["Sentry"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Bugsnag",
+            vendor: .unknown,
+            classNames: ["Bugsnag"],
+            selectorNames: ["notify:", "leaveBreadcrumb:"],
+            bundleIdentifiers: ["com.bugsnag"],
+            urlSchemes: nil,
+            categories: [.crashReporting, .analytics],
+            riskLevel: .low,
+            commonPatterns: ["Bugsnag"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Instabug",
+            vendor: .unknown,
+            classNames: ["Instabug"],
+            selectorNames: ["logUserEventWithName:"],
+            bundleIdentifiers: ["com.instabug"],
+            urlSchemes: nil,
+            categories: [.crashReporting, .analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Instabug"],
+            infoPlistKeys: nil
+        ),
+        
+        // ========== PERFORMANCE MONITORING ==========
+        KnownSDK(
+            name: "New Relic",
+            vendor: .unknown,
+            classNames: ["NewRelic"],
+            selectorNames: ["startWithApplicationToken:"],
+            bundleIdentifiers: ["com.newrelic"],
+            urlSchemes: nil,
+            categories: [.performance, .analytics],
+            riskLevel: .medium,
+            commonPatterns: ["NewRelic"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "Datadog",
+            vendor: .unknown,
+            classNames: ["DD"],
+            selectorNames: ["startWithApplicationID:trackingConsent:"],
+            bundleIdentifiers: ["com.datadog"],
+            urlSchemes: nil,
+            categories: [.performance, .analytics],
+            riskLevel: .medium,
+            commonPatterns: ["Datadog", "DD"],
+            infoPlistKeys: nil
+        ),
+        
+        // ========== PERSONALIZATION ==========
+        KnownSDK(
+            name: "CleverTap",
+            vendor: .unknown,
+            classNames: ["CleverTap"],
+            selectorNames: ["profileSet:", "recordEvent:"],
+            bundleIdentifiers: ["com.clevertap"],
+            urlSchemes: nil,
+            categories: [.analytics, .personalization, .notifications],
+            riskLevel: .medium,
+            commonPatterns: ["CleverTap"],
+            infoPlistKeys: nil
+        ),
+        KnownSDK(
+            name: "MoEngage",
+            vendor: .unknown,
+            classNames: ["MoEngage"],
+            selectorNames: ["trackEvent:", "setUserAttribute:"],
+            bundleIdentifiers: ["com.moengage"],
+            urlSchemes: nil,
+            categories: [.analytics, .personalization, .notifications],
+            riskLevel: .medium,
+            commonPatterns: ["MoEngage"],
+            infoPlistKeys: nil
+        )
+    ]
     
     // MARK: - Properties
     
     private let compileTimeManifest: [String: Any]?
     private var lastScanResult: ScanResult?
-    private let queue = DispatchQueue(label: "com.cookieprime.dependency-scanner")
     
     // MARK: - Initialization
     
@@ -76,7 +551,6 @@ public final class DependencyScanner {
     
     // MARK: - Public API
     
-    /// Scan for SDK dependencies
     public func scanDependencies() async throws -> ScanResult {
         Logger.log(.info, "🔍 Starting comprehensive SDK dependency scan...")
         let startTime = Date()
@@ -191,7 +665,6 @@ public final class DependencyScanner {
         return result
     }
     
-    /// Get the last scan result
     public func getLastScanResult() -> ScanResult? {
         return lastScanResult
     }
@@ -208,7 +681,7 @@ public final class DependencyScanner {
             guard let name = sdkDict["name"] as? String else { return nil }
             
             // Try to match with known SDK database
-            if let knownSDK = SDKRegistry.findSDK(byName: name) {
+            if let knownSDK = knownSDKs.first(where: { $0.name == name }) {
                 return DetectedSDK(
                     name: knownSDK.name,
                     vendor: knownSDK.vendor,
@@ -256,7 +729,7 @@ public final class DependencyScanner {
                 if SDKWhitelist.isWhitelisted(name) { continue }
                 
                 // Check against known SDKs
-                for knownSDK in SDKRegistry.knownSDKs {
+                for knownSDK in knownSDKs {
                     // Check class names
                     if knownSDK.classNames.contains(where: { name.contains($0) }) {
                         detected.append(DetectedSDK(
@@ -295,7 +768,7 @@ public final class DependencyScanner {
     private func scanClassExistence() -> [DetectedSDK] {
         var detected: [DetectedSDK] = []
         
-        for knownSDK in SDKRegistry.knownSDKs {
+        for knownSDK in knownSDKs {
             for className in knownSDK.classNames {
                 if NSClassFromString(className) != nil {
                     detected.append(DetectedSDK(
@@ -317,7 +790,7 @@ public final class DependencyScanner {
     
     private func scanSelectorExistence() async -> [DetectedSDK] {
         return await withTaskGroup(of: [DetectedSDK].self) { group in
-            for knownSDK in SDKRegistry.knownSDKs {
+            for knownSDK in knownSDKs {
                 guard let selectors = knownSDK.selectorNames else { continue }
                 
                 group.addTask {
@@ -358,7 +831,7 @@ public final class DependencyScanner {
     private func scanFrameworkBundles() -> [DetectedSDK] {
         var detected: [DetectedSDK] = []
         
-        for knownSDK in SDKRegistry.knownSDKs {
+        for knownSDK in knownSDKs {
             guard let bundleIds = knownSDK.bundleIdentifiers else { continue }
             
             for bundleId in bundleIds {
@@ -390,7 +863,7 @@ public final class DependencyScanner {
         
         let allSchemes = urlTypes.compactMap { $0["CFBundleURLSchemes"] as? [String] }.flatMap { $0 }
         
-        for knownSDK in SDKRegistry.knownSDKs {
+        for knownSDK in knownSDKs {
             guard let schemes = knownSDK.urlSchemes else { continue }
             
             for scheme in schemes {
@@ -419,7 +892,7 @@ public final class DependencyScanner {
             return detected
         }
         
-        for knownSDK in SDKRegistry.knownSDKs {
+        for knownSDK in knownSDKs {
             guard let plistKeys = knownSDK.infoPlistKeys else { continue }
             
             for key in plistKeys {
@@ -464,7 +937,7 @@ public final class DependencyScanner {
                     let risk = FuzzyPatterns.determineRisk(from: name)
                     
                     // Only add if not already detected as known SDK
-                    if !SDKRegistry.knownSDKs.contains(where: { $0.commonPatterns?.contains { name.contains($0) } ?? false }) {
+                    if !knownSDKs.contains(where: { $0.commonPatterns?.contains { name.contains($0) } ?? false }) {
                         unknownSDKs.append(DetectedSDK(
                             name: "Possible \(category.displayName) SDK",
                             vendor: .unknown,
@@ -483,7 +956,7 @@ public final class DependencyScanner {
                 if await Self.checkSelectorExistence(selectorName: selector) {
                     if let className = await Self.findClassWithSelector(selectorName: selector) {
                         // Skip if class is already detected as a known SDK
-                        if !SDKRegistry.knownSDKs.contains(where: { $0.classNames.contains(className) }) {
+                        if !knownSDKs.contains(where: { $0.classNames.contains(className) }) {
                             unknownSDKs.append(DetectedSDK(
                                 name: "Unknown Tracking SDK (\(className))",
                                 vendor: .unknown,
@@ -659,5 +1132,248 @@ public final class DependencyScanner {
         }
         
         return summary
+    }
+}
+
+// MARK: - DetectionMethod Extension
+
+extension DetectionMethod {
+    public var confidenceWeight: Double {
+        switch self {
+        case .compileTimeManifest: return 0.95
+        case .classExistence: return 0.90
+        case .selectorCheck: return 0.85
+        case .dyldRuntime: return 0.80
+        case .frameworkBundle: return 0.75
+        case .urlScheme: return 0.70
+        case .infoPlist: return 0.65
+        case .fuzzyPattern: return 0.40
+        }
+    }
+    
+    public var description: String {
+        switch self {
+        case .compileTimeManifest: return "Compile-time Manifest"
+        case .classExistence: return "Class Existence"
+        case .selectorCheck: return "Selector Check"
+        case .dyldRuntime: return "dyld Runtime"
+        case .frameworkBundle: return "Framework Bundle"
+        case .urlScheme: return "URL Scheme"
+        case .infoPlist: return "Info.plist"
+        case .fuzzyPattern: return "Fuzzy Pattern"
+        }
+    }
+}
+
+// MARK: - SDKCategory Extension
+
+extension SDKCategory {
+    public var displayName: String {
+        switch self {
+        case .analytics: return "Analytics"
+        case .advertising: return "Advertising"
+        case .social: return "Social Features"
+        case .location: return "Location Services"
+        case .personalization: return "Personalization"
+        case .performance: return "Performance Monitoring"
+        case .crashReporting: return "Crash Reporting"
+        case .notifications: return "Push Notifications"
+        case .attribution: return "App Attribution"
+        case .authentication: return "Authentication"
+        case .essential: return "Essential"
+        case .unknown: return "Unknown"
+        }
+    }
+}
+
+// MARK: - RiskLevel Extension
+
+extension RiskLevel {
+    public var color: String {
+        switch self {
+        case .low: return "🟢"
+        case .medium: return "🟡"
+        case .high: return "🟠"
+        case .critical: return "🔴"
+        }
+    }
+}
+
+// MARK: - SDKVendor Extension
+
+extension SDKVendor {
+    public var isAdvertisingNetwork: Bool {
+        switch self {
+        case .unity, .ironSource, .appLovin, .vungle, .adColony:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    public var isAnalyticsProvider: Bool {
+        switch self {
+        case .google, .mixpanel, .amplitude, .segment, .countly, .flurry, .appsFlyer, .adjust:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+// MARK: - SDKWhitelist
+
+public enum SDKWhitelist {
+    public static let systemFrameworks: Set<String> = [
+        "Foundation", "UIKit", "SwiftUI", "Combine",
+        "CoreData", "CoreLocation", "MapKit", "AVFoundation",
+        "CloudKit", "Contacts", "CoreMotion", "HealthKit",
+        "HomeKit", "Messages", "PassKit", "StoreKit",
+        "WebKit", "SafariServices", "AuthenticationServices",
+        "LocalAuthentication", "UserNotifications", "CoreBluetooth",
+        "Network", "Security", "CryptoKit", "CoreGraphics",
+        "QuartzCore", "Metal", "ARKit", "RealityKit",
+        "SceneKit", "SpriteKit", "GameKit", "MultipeerConnectivity",
+        "NearbyInteraction", "Vision", "Speech", "NaturalLanguage",
+        "CoreML", "SoundAnalysis", "CreateML", "CoreImage",
+        "CoreVideo", "CoreMedia", "ImageIO", "ImageCaptureCore",
+        "Photos", "PhotosUI", "AssetsLibrary", "EventKit",
+        "EventKitUI", "AddressBook", "AddressBookUI", "MessageUI",
+        "Social", "Accounts", "AdSupport", "AppTrackingTransparency",
+        "DeviceCheck", "BackgroundTasks", "WidgetKit", "Intents",
+        "IntentsUI", "WatchKit", "HealthKitUI", "HomeKitUI",
+        "UserNotificationsUI",
+        "libswift", "libobjc", "libsystem", "dyld", "libdispatch",
+        "libc", "libpthread", "libz", "libxml2", "libsqlite3",
+        "libicucore", "libcompression", "libnetwork", "libboringssl",
+        "libcorecrypto", "libcommonCrypto"
+    ]
+    
+    public static let safePatterns: Set<String> = [
+        "System/Library", "usr/lib", "AppleInternal",
+        "XCTest", "Xcode", "UnitTest", "UITest",
+        "SnapshotTest", "Mock", "Stub", "Fake",
+        "Debug", "Development", "Internal", "Experimental",
+        "CookiePrime", "CookiePrimeConsent"
+    ]
+    
+    public static let safeLibraries: Set<String> = [
+        "Alamofire", "URLSession", "AFNetworking", "RestKit", "Moya",
+        "SDWebImage", "Kingfisher", "Nuke", "FSPagerView", "TTTAttributedLabel",
+        "SnapKit", "Masonry", "Texture", "IGListKit",
+        "RxSwift", "RxCocoa", "Combine", "ReactiveSwift", "ReactiveCocoa",
+        "Swinject", "Dagger", "Koin", "Resolver", "Dip",
+        "CryptoSwift", "SwiftyJSON", "ObjectMapper", "Codable",
+        "SwiftProtobuf", "GRDB", "SQLite", "Realm", "CoreData",
+        "CocoaLumberjack", "XCGLogger", "SwiftyBeaver", "OSLog", "Logging",
+        "Telemetry", "Metrics", "Stats", "Counter"
+    ]
+    
+    public static var customWhitelist: Set<String> = []
+    
+    public static func isWhitelisted(_ name: String) -> Bool {
+        let lowercased = name.lowercased()
+        
+        if customWhitelist.contains(where: { lowercased.contains($0.lowercased()) }) {
+            return true
+        }
+        
+        for framework in systemFrameworks {
+            if lowercased.contains(framework.lowercased()) {
+                return true
+            }
+        }
+        
+        for pattern in safePatterns {
+            if lowercased.contains(pattern.lowercased()) {
+                return true
+            }
+        }
+        
+        for library in safeLibraries {
+            if lowercased.contains(library.lowercased()) {
+                return true
+            }
+        }
+        
+        return false
+    }
+}
+
+// MARK: - FuzzyPatterns
+
+public enum FuzzyPatterns {
+    public static let trackingSelectors: [String] = [
+        "trackEvent:", "logEvent:", "sendEvent:", "recordEvent:", "log:",
+        "setUserId:", "identify:", "setUserProperty:", "setCustomDimension:",
+        "setCustomMetric:", "startTracking:", "enableTracking:", "disableTracking:",
+        "optIn:", "optOut:", "setConsent:", "updateConsent:", "flush", "submit",
+        "logPurchase:", "logRevenue:", "logError:", "logException:", "crash",
+        "setLocation:", "setGender:", "setAge:", "setBirthYear:", "setEmail:",
+        "setPhoneNumber:", "setName:", "setFirstName:", "setLastName:",
+        "setAddress:", "setCity:", "setCountry:", "setZipCode:",
+        "addTag:", "removeTag:", "setTags:", "increment:", "decrement:",
+        "setOnce:", "unset:", "append:", "prepend:", "union:", "intercept:",
+        "trackScreen:", "trackPage:", "trackInteraction:", "trackClick:",
+        "trackImpression:", "trackConversion:", "trackGoal:", "trackMilestone:",
+        "trackAchievement:", "trackLevel:", "trackScore:", "trackTime:",
+        "trackDuration:", "trackSession:", "trackLaunch:", "trackInstall:",
+        "trackUpdate:", "trackUninstall:"
+    ]
+    
+    public static func matchesTrackingPattern(_ name: String) -> Bool {
+        let lowercased = name.lowercased()
+        let trackingPatterns = [
+            "analytics", "tracker", "tracking", "metrics", "measure",
+            "track", "stats", "count", "log", "monitor", "report",
+            "ads", "advert", "marketing", "promotion", "banner",
+            "social", "share", "login", "auth", "profile", "user",
+            "attribution", "referral", "channel", "source", "campaign",
+            "personalization", "recommend", "suggest", "customize",
+            "location", "geo", "gps", "coordinate", "latitude", "longitude",
+            "push", "notification", "message", "alert",
+            "performance", "crash", "error", "exception", "debug",
+            "event", "action", "behavior", "session", "visit",
+            "purchase", "payment", "revenue", "transaction",
+            "device", "hardware", "model", "os", "screen",
+            "network", "bandwidth", "latency"
+        ]
+        return trackingPatterns.contains { lowercased.contains($0) }
+    }
+    
+    public static func determineCategory(from name: String) -> SDKCategory {
+        let lowercased = name.lowercased()
+        if lowercased.contains("analytics") || lowercased.contains("track") {
+            return .analytics
+        } else if lowercased.contains("advert") || lowercased.contains("ads") {
+            return .advertising
+        } else if lowercased.contains("social") || lowercased.contains("share") {
+            return .social
+        } else if lowercased.contains("location") || lowercased.contains("geo") {
+            return .location
+        } else if lowercased.contains("personalization") || lowercased.contains("recommend") {
+            return .personalization
+        } else if lowercased.contains("performance") || lowercased.contains("monitor") {
+            return .performance
+        } else if lowercased.contains("crash") || lowercased.contains("error") {
+            return .crashReporting
+        } else if lowercased.contains("notification") || lowercased.contains("push") {
+            return .notifications
+        } else if lowercased.contains("attribution") || lowercased.contains("referral") {
+            return .attribution
+        }
+        return .unknown
+    }
+    
+    public static func determineRisk(from name: String) -> RiskLevel {
+        let lowercased = name.lowercased()
+        if lowercased.contains("advert") || lowercased.contains("ads") {
+            return .high
+        } else if lowercased.contains("location") || lowercased.contains("geo") {
+            return .high
+        } else if lowercased.contains("analytics") || lowercased.contains("track") {
+            return .medium
+        }
+        return .low
     }
 }
