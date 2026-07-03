@@ -64,6 +64,7 @@ public final class OfflineManager: ObservableObject {
     private let userDefaults: UserDefaults
     private let pendingOperationsKey = "cookieprime_pending_operations"
     private var pendingOperations: [PendingOperation] = []
+    private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
     
@@ -220,7 +221,7 @@ public final class OfflineManager: ObservableObject {
     }
 }
 
-// Add this extension outside the OfflineManager class:
+// MARK: - Pending Operation Convenience
 
 extension OfflineManager.PendingOperation {
     /// Create a consent upload operation
@@ -248,6 +249,9 @@ extension OfflineManager {
     public var networkStatusPublisher: AnyPublisher<(isOffline: Bool, connectionType: ConnectionType), Never> {
         $isOffline
             .combineLatest($connectionType)
+            .map { isOffline, connectionType in
+                return (isOffline: isOffline, connectionType: connectionType)
+            }
             .eraseToAnyPublisher()
     }
 }
