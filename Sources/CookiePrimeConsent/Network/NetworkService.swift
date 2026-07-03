@@ -145,7 +145,8 @@ public final class NetworkService: Sendable {
         
         let response: ConfigResponse = try await performRequest(
             endpoint: "/config/\(appId)",
-            method: "GET"
+            method: "GET",
+            body: EmptyBody()
         )
         
         Logger.log(.info, "✅ Configuration fetched successfully (version: \(response.version))")
@@ -179,7 +180,8 @@ public final class NetworkService: Sendable {
         
         let response: HealthResponse = try await performRequest(
             endpoint: "/health",
-            method: "GET"
+            method: "GET",
+            body: EmptyBody()
         )
         
         return response
@@ -370,6 +372,10 @@ public final class NetworkService: Sendable {
         return records
     }
 }
+
+// MARK: - EmptyBody
+
+public struct EmptyBody: Encodable {}
 
 // MARK: - Optional Protocol
 
