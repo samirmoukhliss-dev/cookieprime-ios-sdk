@@ -90,48 +90,6 @@ public enum SyncStatus: String, Codable, Sendable {
     case retrying
 }
 
-// MARK: - Consent Status
-
-/// Consent status for a category
-public enum ConsentStatus: String, Codable, Sendable {
-    case unknown
-    case granted
-    case denied
-    case expired
-    
-    public init(from bool: Bool?) {
-        switch bool {
-        case true: self = .granted
-        case false: self = .denied
-        case nil: self = .unknown
-        }
-    }
-    
-    public var boolValue: Bool? {
-        switch self {
-        case .granted: return true
-        case .denied: return false
-        case .unknown, .expired: return nil
-        }
-    }
-    
-    public var isGranted: Bool {
-        self == .granted
-    }
-    
-    public var isDenied: Bool {
-        self == .denied
-    }
-    
-    public var isUnknown: Bool {
-        self == .unknown
-    }
-    
-    public var isExpired: Bool {
-        self == .expired
-    }
-}
-
 // MARK: - Proof Generator
 
 /// Generates cryptographic proofs for consent records
