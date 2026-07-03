@@ -57,13 +57,11 @@ jobs:
       run: |
         set -e
         echo "📦 Building CookiePrime iOS SDK XCFramework in Debug mode..."
-        
-        # Show what we're building (minimal info)
         echo "📁 Sources: $(find Sources -name "*.swift" | wc -l | xargs) Swift files"
         
-        # Build for iOS (device) - with quiet output, only show errors
+        # Build for iOS (device)
         echo "📱 Building for iOS..."
-        if ! xcodebuild archive \
+        xcodebuild archive \
             -scheme CookiePrimeConsent \
             -configuration Debug \
             -destination "generic/platform=iOS" \
@@ -71,17 +69,12 @@ jobs:
             SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             -derivedDataPath DerivedData \
-            -quiet 2>&1 | tee build_ios.log; then
-            echo "❌ iOS build failed"
-            echo "--- Last 50 lines of build log ---"
-            tail -50 build_ios.log
-            exit 1
-        fi
+            -quiet || { echo "❌ iOS build failed"; exit 1; }
         echo "✅ iOS build succeeded"
         
-        # Build for Simulator - with quiet output
+        # Build for Simulator
         echo "📱 Building for iOS Simulator..."
-        if ! xcodebuild archive \
+        xcodebuild archive \
             -scheme CookiePrimeConsent \
             -configuration Debug \
             -destination "generic/platform=iOS Simulator" \
@@ -89,26 +82,38 @@ jobs:
             SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             -derivedDataPath DerivedData \
-            -quiet 2>&1 | tee build_simulator.log; then
-            echo "❌ Simulator build failed"
-            echo "--- Last 50 lines of build log ---"
-            tail -50 build_simulator.log
+            -quiet || { echo "❌ Simulator build failed"; exit 1; }
+        echo "✅ Simulator build succeeded"
+        
+        # Find the actual framework paths
+        echo "🔍 Finding framework paths..."
+        
+        # For iOS device
+        IOS_FRAMEWORK=$(find build/ios.xcarchive -name "*.framework" -type d | head -1)
+        if [ -z "$IOS_FRAMEWORK" ]; then
+            echo "❌ No framework found in iOS archive"
+            echo "Contents of iOS archive:"
+            find build/ios.xcarchive -type d | head -20
             exit 1
         fi
-        echo "✅ Simulator build succeeded"
+        echo "iOS framework: $IOS_FRAMEWORK"
+        
+        # For Simulator
+        SIM_FRAMEWORK=$(find build/ios-simulator.xcarchive -name "*.framework" -type d | head -1)
+        if [ -z "$SIM_FRAMEWORK" ]; then
+            echo "❌ No framework found in Simulator archive"
+            echo "Contents of Simulator archive:"
+            find build/ios-simulator.xcarchive -type d | head -20
+            exit 1
+        fi
+        echo "Simulator framework: $SIM_FRAMEWORK"
         
         # Create XCFramework
         echo "📦 Creating XCFramework..."
         xcodebuild -create-xcframework \
-            -framework build/ios.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework \
-            -framework build/ios-simulator.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework \
-            -output CookiePrimeConsent.xcframework 2>&1 | tee xcframework.log
-        
-        if [ ! -d "CookiePrimeConsent.xcframework" ]; then
-            echo "❌ XCFramework creation failed"
-            cat xcframework.log
-            exit 1
-        fi
+            -framework "$IOS_FRAMEWORK" \
+            -framework "$SIM_FRAMEWORK" \
+            -output CookiePrimeConsent.xcframework || { echo "❌ XCFramework creation failed"; exit 1; }
         echo "✅ XCFramework created"
         
         # Zip
