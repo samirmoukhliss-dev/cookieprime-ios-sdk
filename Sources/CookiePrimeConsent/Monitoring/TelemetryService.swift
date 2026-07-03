@@ -246,7 +246,8 @@ public final class TelemetryService {
         return telemetryQueue.sync { storedEvents.last?.timestamp }
     }
     
-    internal func getAllEvents() -> [TelemetryEvent] {
+    // MARK: - FIXED: Changed from internal to private
+    private func getAllEvents() -> [TelemetryEvent] {
         return telemetryQueue.sync { storedEvents }
     }
     
