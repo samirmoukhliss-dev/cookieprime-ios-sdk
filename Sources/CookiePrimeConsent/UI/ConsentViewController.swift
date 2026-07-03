@@ -327,7 +327,7 @@ public final class ConsentViewController: UIViewController {
                 try await viewModel.saveConsent()
                 let consent = viewModel.getCurrentConsent()
                 delegate?.consentViewController(self, didCompleteWithConsent: consent)
-                await dismiss(animated: true)
+                dismiss(animated: true)
             } catch {
                 delegate?.consentViewController(self, didFailWithError: error)
             }
@@ -363,7 +363,7 @@ class ConsentCategoryView: UIView {
     // MARK: - Properties
     
     private var category: ConsentCategory
-    private weak var delegate: ConsentCategoryViewDelegate?
+    weak var delegate: ConsentCategoryViewDelegate?  // Changed from private to internal
     
     private let titleLabel = UILabel()
     private let descriptionLabel = UILabel()
