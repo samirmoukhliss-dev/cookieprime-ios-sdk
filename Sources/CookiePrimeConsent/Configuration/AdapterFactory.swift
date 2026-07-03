@@ -142,11 +142,24 @@ public struct AdapterFactory {
         default:
             // For unknown SDKs, return a generic adapter if we have categories
             if !detectedSDK.categories.isEmpty {
+                // FIXED: Convert RiskLevel type from DetectionMethod.swift to DependencyScanner.RiskLevel
+                let riskLevel: DependencyScanner.RiskLevel
+                switch detectedSDK.riskLevel {
+                case .low:
+                    riskLevel = .low
+                case .medium:
+                    riskLevel = .medium
+                case .high:
+                    riskLevel = .high
+                case .critical:
+                    riskLevel = .critical
+                }
+                
                 return UnknownSDKAdapter(
                     name: sdkName,
                     categories: detectedSDK.categories,
                     vendor: detectedSDK.vendor,
-                    riskLevel: detectedSDK.riskLevel
+                    riskLevel: riskLevel
                 )
             }
             return nil
@@ -163,7 +176,7 @@ public struct AdapterFactory {
         name: String,
         categories: Set<SDKCategory> = [.unknown],
         vendor: SDKVendor = .unknown,
-        riskLevel: RiskLevel = .medium
+        riskLevel: DependencyScanner.RiskLevel = .medium
     ) -> Adapter {
         return UnknownSDKAdapter(
             name: name,
@@ -194,7 +207,7 @@ extension AdapterFactory {
     }
     
     private static func canImport(_ module: String) -> Bool {
-        #if canImport(FirebaseAnalytics) && FIREBASE_ANALYTICS
+        #if canImport(FirebaseAnalytics)
         return true
         #else
         return false
