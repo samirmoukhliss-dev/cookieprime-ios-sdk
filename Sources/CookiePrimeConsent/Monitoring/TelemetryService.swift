@@ -27,7 +27,6 @@ public final class TelemetryService {
     
     // MARK: - Properties
     
-    private let logger = Logger(subsystem: "com.cookieprime.consent", category: "Telemetry")
     private let userDefaults: UserDefaults
     private let sessionId = UUID().uuidString
     private let sessionStart = Date()
@@ -86,10 +85,6 @@ public final class TelemetryService {
                 print("📊 Telemetry: \(eventName) - \(properties)")
             }
             #endif
-            
-            // Send to server if online (in production)
-            // For now, just log to OSLog
-            self.logger.info("📊 Telemetry: \(eventName) - \(properties)")
         }
     }
     
@@ -228,8 +223,8 @@ public final class TelemetryService {
             "severity": severity
         ])
         
-        // Also log to OSLog
-        self.logger.error("🔥 SDK Error [\(severity)] in \(context): \(error.localizedDescription)")
+        // Log to OSLog
+        os_log("🔥 SDK Error [%{public}@] in %{public}@: %{public}@", log: .default, type: .error, severity, context, error.localizedDescription)
     }
     
     // MARK: - Performance Tracking
@@ -239,12 +234,6 @@ public final class TelemetryService {
             "operation": operation,
             "duration_ms": String(format: "%.2f", duration * 1000)
         ])
-        
-        if duration > 1.0 {
-            self.logger.warning("🐢 Slow Operation: \(operation) took \(duration)s")
-        } else {
-            self.logger.debug("⚡ Performance: \(operation) took \(duration)s")
-        }
     }
     
     // MARK: - Data Access
@@ -257,7 +246,7 @@ public final class TelemetryService {
         return telemetryQueue.sync { storedEvents.last?.timestamp }
     }
     
-    public func getAllEvents() -> [TelemetryEvent] {
+    internal func getAllEvents() -> [TelemetryEvent] {
         return telemetryQueue.sync { storedEvents }
     }
     
@@ -310,19 +299,6 @@ public final class TelemetryService {
     
     private func typeString(_ type: OfflineManager.ConnectionType) -> String {
         switch type {
-        case .wifi: return "wifi"
-        case .cellular: return "cellular"
-        case .ethernet: return "ethernet"
-        case .unknown: return "unknown"
-        }
-    }
-}
-
-// MARK: - OfflineManager Extension
-
-extension OfflineManager {
-    public var connectionTypeString: String {
-        switch connectionType {
         case .wifi: return "wifi"
         case .cellular: return "cellular"
         case .ethernet: return "ethernet"
