@@ -136,7 +136,7 @@ public final class TelemetryService {
         logEvent("offline_operation", properties: [
             "sdk_name": sdkName,
             "operation": operation,
-            "connection_type": OfflineManager.shared.connectionTypeString
+            "connection_type": OfflineManager.shared.connectionType.rawValue
         ])
     }
     
