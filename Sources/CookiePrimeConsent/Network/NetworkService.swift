@@ -295,10 +295,10 @@ public final class NetworkService: Sendable {
     
     // MARK: - Helper Methods
     
-    private func calculateOverallRisk(from sdks: [DependencyScanner.DetectedSDK]) -> RiskLevel {
+    private func calculateOverallRisk(from sdks: [DependencyScanner.DetectedSDK]) -> DependencyScanner.RiskLevel {
         guard !sdks.isEmpty else { return .low }
         
-        var maxRisk: RiskLevel = .low
+        var maxRisk: DependencyScanner.RiskLevel = .low
         for sdk in sdks {
             if sdk.riskLevel.priority > maxRisk.priority {
                 maxRisk = sdk.riskLevel
