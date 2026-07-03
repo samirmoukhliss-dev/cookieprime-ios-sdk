@@ -51,22 +51,19 @@ jobs:
             ]
         )
         EOF
-        cat Package.swift
+        echo "✅ Package.swift created"
     
     - name: Build XCFramework (Debug)
       run: |
         set -e
         echo "📦 Building CookiePrime iOS SDK XCFramework in Debug mode..."
         
-        # Show what we're building
-        echo "=== Sources Directory ==="
-        ls -la Sources/CookiePrimeConsent/
-        echo "=== Total Swift Files ==="
-        find Sources -name "*.swift" | wc -l
+        # Show what we're building (minimal info)
+        echo "📁 Sources: $(find Sources -name "*.swift" | wc -l | xargs) Swift files"
         
-        # Build for iOS (device)
+        # Build for iOS (device) - with quiet output, only show errors
         echo "📱 Building for iOS..."
-        xcodebuild archive \
+        if ! xcodebuild archive \
             -scheme CookiePrimeConsent \
             -configuration Debug \
             -destination "generic/platform=iOS" \
@@ -74,11 +71,17 @@ jobs:
             SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             -derivedDataPath DerivedData \
-            || { echo "❌ iOS build failed"; exit 1; }
+            -quiet 2>&1 | tee build_ios.log; then
+            echo "❌ iOS build failed"
+            echo "--- Last 50 lines of build log ---"
+            tail -50 build_ios.log
+            exit 1
+        fi
+        echo "✅ iOS build succeeded"
         
-        # Build for Simulator
+        # Build for Simulator - with quiet output
         echo "📱 Building for iOS Simulator..."
-        xcodebuild archive \
+        if ! xcodebuild archive \
             -scheme CookiePrimeConsent \
             -configuration Debug \
             -destination "generic/platform=iOS Simulator" \
@@ -86,20 +89,35 @@ jobs:
             SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             -derivedDataPath DerivedData \
-            || { echo "❌ Simulator build failed"; exit 1; }
+            -quiet 2>&1 | tee build_simulator.log; then
+            echo "❌ Simulator build failed"
+            echo "--- Last 50 lines of build log ---"
+            tail -50 build_simulator.log
+            exit 1
+        fi
+        echo "✅ Simulator build succeeded"
         
         # Create XCFramework
         echo "📦 Creating XCFramework..."
         xcodebuild -create-xcframework \
             -framework build/ios.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework \
             -framework build/ios-simulator.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework \
-            -output CookiePrimeConsent.xcframework
+            -output CookiePrimeConsent.xcframework 2>&1 | tee xcframework.log
+        
+        if [ ! -d "CookiePrimeConsent.xcframework" ]; then
+            echo "❌ XCFramework creation failed"
+            cat xcframework.log
+            exit 1
+        fi
+        echo "✅ XCFramework created"
         
         # Zip
-        zip -r CookiePrimeConsent.xcframework.zip CookiePrimeConsent.xcframework
+        zip -r CookiePrimeConsent.xcframework.zip CookiePrimeConsent.xcframework > /dev/null
+        echo "✅ Zip complete"
         
-        echo "✅ Build complete!"
-        ls -la CookiePrimeConsent.xcframework.zip
+        # Show final output
+        echo "📦 Build artifacts:"
+        ls -lh CookiePrimeConsent.xcframework.zip
     
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
