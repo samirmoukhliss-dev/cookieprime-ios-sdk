@@ -1,0 +1,45 @@
+# Xcode
+*.xcodeproj
+*.xcworkspace
+*.xcuserstate
+*.xcuserdatad
+*.xcshareddata
+*.xcscheme
+DerivedData/
+build/
+*.framework
+*.xframework
+*.dSYM
+*.app
+
+# SwiftPM
+.swiftpm/
+.build/
+
+# CocoaPods
+Pods/
+*.xcworkspace
+Podfile.lock
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+*~
+*.log
+*.tmp
+
+# IDE
+.idea/
+.vscode/
+
+# Artifacts
+*.zip
+*.checksum
+CookiePrimeConsent.xcframework/
+
+# Secrets
+*.secret
+*.key
+*.p12
+*.mobileprovision
