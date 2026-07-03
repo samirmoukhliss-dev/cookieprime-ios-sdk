@@ -43,6 +43,9 @@ jobs:
                     path: "Sources/CookiePrimeConsent",
                     resources: [
                         .process("Resources")
+                    ],
+                    swiftSettings: [
+                        .define("DEBUG", .when(configuration: .debug))
                     ]
                 )
             ]
@@ -50,10 +53,10 @@ jobs:
         EOF
         cat Package.swift
     
-    - name: Build XCFramework
+    - name: Build XCFramework (Debug)
       run: |
         set -e
-        echo "📦 Building CookiePrime iOS SDK XCFramework..."
+        echo "📦 Building CookiePrime iOS SDK XCFramework in Debug mode..."
         
         # Show what we're building
         echo "=== Sources Directory ==="
@@ -65,22 +68,26 @@ jobs:
         echo "📱 Building for iOS..."
         xcodebuild archive \
             -scheme CookiePrimeConsent \
+            -configuration Debug \
             -destination "generic/platform=iOS" \
             -archivePath build/ios.xcarchive \
             SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             -derivedDataPath DerivedData \
+            OTHER_SWIFT_FLAGS="-Xswiftc -enable-library-evolution" \
             || { echo "❌ iOS build failed"; exit 1; }
         
         # Build for Simulator
         echo "📱 Building for iOS Simulator..."
         xcodebuild archive \
             -scheme CookiePrimeConsent \
+            -configuration Debug \
             -destination "generic/platform=iOS Simulator" \
             -archivePath build/ios-simulator.xcarchive \
             SKIP_INSTALL=NO \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             -derivedDataPath DerivedData \
+            OTHER_SWIFT_FLAGS="-Xswiftc -enable-library-evolution" \
             || { echo "❌ Simulator build failed"; exit 1; }
         
         # Create XCFramework
