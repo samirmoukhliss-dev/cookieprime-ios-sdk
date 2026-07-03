@@ -186,8 +186,8 @@ public final class SDKConfigurator {
                 adapters[detectedSDK.name] = adapter
                 Logger.log(.debug, "  ✅ Registered: \(detectedSDK.name)")
             } else {
-                // Try default adapter
-                let adapter = AdapterFactory.createDefaultAdapter(
+                // Try default adapter - use DependencyScanner.RiskLevel
+                let adapter = UnknownSDKAdapter(
                     name: detectedSDK.name,
                     categories: detectedSDK.categories,
                     vendor: detectedSDK.vendor,
