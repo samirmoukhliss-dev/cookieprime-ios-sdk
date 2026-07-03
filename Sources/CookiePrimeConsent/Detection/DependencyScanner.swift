@@ -11,15 +11,10 @@ func _dyld_image_count() -> UInt32
 @_silgen_name("_dyld_get_image_name")
 func _dyld_get_image_name(_ index: UInt32) -> UnsafePointer<CChar>?
 
-// Also declare the function we use for class enumeration
-@_silgen_name("objc_copyClassList")
-func objc_copyClassList(_ count: UnsafeMutablePointer<UInt32>?) -> UnsafeMutablePointer<AnyClass>?
-
-@_silgen_name("class_respondsToSelector")
-func class_respondsToSelector(_ cls: AnyClass?, _ sel: Selector?) -> Bool
-
-@_silgen_name("class_getName")
-func class_getName(_ cls: AnyClass?) -> UnsafePointer<CChar>?
+// Use the ObjectiveC module's versions of these functions instead of redeclaring
+// @_silgen_name("objc_copyClassList") - REMOVED - using ObjectiveC's version
+// @_silgen_name("class_respondsToSelector") - REMOVED - using ObjectiveC's version
+// @_silgen_name("class_getName") - REMOVED - using ObjectiveC's version
 
 #if canImport(UIKit)
 import UIKit
@@ -726,7 +721,8 @@ public final class DependencyScanner {
     }
     
     private func scanDyldRuntime() async -> [DetectedSDK] {
-        return await Task.detached {
+        // FIXED: Added [self] to capture self explicitly
+        return await Task.detached { [self] in
             var detected: [DetectedSDK] = []
             var processedNames = Set<String>()
             
@@ -924,7 +920,8 @@ public final class DependencyScanner {
     }
     
     private func performFuzzyDetection() async -> [DetectedSDK] {
-        return await Task.detached {
+        // FIXED: Added [self] to capture self explicitly
+        return await Task.detached { [self] in
             var unknownSDKs: [DetectedSDK] = []
             var processedNames = Set<String>()
             
@@ -940,7 +937,19 @@ public final class DependencyScanner {
                 
                 if FuzzyPatterns.matchesTrackingPattern(name) {
                     let category = FuzzyPatterns.determineCategory(from: name)
-                    let risk = FuzzyPatterns.determineRisk(from: name)
+                    // FIXED: Convert FuzzyPatterns.RiskLevel to DependencyScanner.RiskLevel
+                    let fuzzyRisk = FuzzyPatterns.determineRisk(from: name)
+                    let risk: RiskLevel
+                    switch fuzzyRisk {
+                    case .low:
+                        risk = .low
+                    case .medium:
+                        risk = .medium
+                    case .high:
+                        risk = .high
+                    case .critical:
+                        risk = .critical
+                    }
                     
                     if !knownSDKs.contains(where: { $0.commonPatterns?.contains { name.contains($0) } ?? false }) {
                         unknownSDKs.append(DetectedSDK(
@@ -981,6 +990,7 @@ public final class DependencyScanner {
     // MARK: - Helper Methods
     
     private static func checkSelectorExistence(selectorName: String) async -> Bool {
+        // FIXED: Use ObjectiveC's objc_copyClassList directly (no custom declaration)
         return await Task.detached {
             let selector = Selector(selectorName)
             
@@ -999,6 +1009,7 @@ public final class DependencyScanner {
     }
     
     private static func findClassWithSelector(selectorName: String) async -> String? {
+        // FIXED: Use ObjectiveC's objc_copyClassList directly (no custom declaration)
         return await Task.detached {
             let selector = Selector(selectorName)
             
