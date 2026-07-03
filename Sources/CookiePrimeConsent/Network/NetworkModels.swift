@@ -282,3 +282,6 @@ public struct BatchResponse: Codable, Sendable {
         self.responses = responses
     }
 }
+
+// MARK: - Note: EmptyBody is defined in NetworkService.swift
+// Do not redeclare it here to avoid duplicate symbol errors
