@@ -1,6 +1,13 @@
 // FILE: Sources/CookiePrimeConsent/Configuration/Adapters/BaseAdapter.swift
 import Foundation
 
+#if canImport(AppTrackingTransparency)
+import AppTrackingTransparency
+#endif
+#if canImport(AdSupport)
+import AdSupport
+#endif
+
 // MARK: - Adapter Protocol
 
 /// Protocol for SDK adapters that handle consent-aware configuration
@@ -42,8 +49,8 @@ open class BaseAdapter: Adapter {
     public let isAvailable: Bool
     public let requiresATT: Bool
     
-    private let configurationManager = ConfigurationManager.shared
-    private let telemetryService = TelemetryService.shared
+    internal let configurationManager = ConfigurationManager.shared
+    internal let telemetryService = TelemetryService.shared
     private var isConfigured = false
     
     // MARK: - Initialization
@@ -119,7 +126,7 @@ open class BaseAdapter: Adapter {
     open func checkATTStatus() async -> Bool {
         guard requiresATT else { return true }
         
-        #if canImport(AppTrackingTransparency) && canImport(AdSupport)
+        #if canImport(AppTrackingTransparency)
         if #available(iOS 14, *) {
             let status = await ATTrackingManager.trackingAuthorizationStatus
             return status == .authorized
