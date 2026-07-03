@@ -9,10 +9,6 @@ public final class OfflineManager: ObservableObject {
     // MARK: - Singleton
     
     public static let shared = OfflineManager()
-    private init() {
-        setupNetworkMonitoring()
-        loadInitialState()
-    }
     
     // MARK: - Types
     
@@ -66,7 +62,16 @@ public final class OfflineManager: ObservableObject {
     private var pendingOperations: [PendingOperation] = []
     private var cancellables = Set<AnyCancellable>()
     
-    // MARK: - Initialization
+    // MARK: - Initialization - FIXED
+    
+    private init() {
+        // Initialize userDefaults FIRST before calling any other methods
+        self.userDefaults = UserDefaults.standard
+        
+        // Now we can safely call methods that use self
+        setupNetworkMonitoring()
+        loadInitialState()
+    }
     
     private func setupNetworkMonitoring() {
         monitor.pathUpdateHandler = { [weak self] path in
