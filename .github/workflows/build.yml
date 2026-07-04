@@ -24,7 +24,7 @@ jobs:
         set -e
         echo "📦 Building CookiePrime iOS SDK XCFramework..."
         
-        # Archive for iOS device (creates proper .framework bundle)
+        # Archive for iOS device
         echo "📱 Archiving for iOS device..."
         xcodebuild archive \
             -scheme CookiePrimeConsent \
@@ -33,6 +33,7 @@ jobs:
             -archivePath "build/ios.xcarchive" \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             SKIP_INSTALL=NO \
+            SWIFT_VERSION=5.9 \
             -quiet || { echo "❌ iOS archive failed"; exit 1; }
         echo "✅ iOS archive succeeded"
         
@@ -45,18 +46,38 @@ jobs:
             -archivePath "build/ios-simulator.xcarchive" \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             SKIP_INSTALL=NO \
+            SWIFT_VERSION=5.9 \
             -quiet || { echo "❌ Simulator archive failed"; exit 1; }
         echo "✅ Simulator archive succeeded"
         
-        # Verify .swiftinterface files exist in the archived frameworks
-        echo "🔍 Checking for .swiftinterface files..."
-        find build -name "*.swiftinterface" | head -10
+        # Find the actual framework paths within the archives
+        echo "🔍 Finding frameworks in archives..."
         
-        # Create XCFramework from archived frameworks
+        IOS_FRAMEWORK=$(find build/ios.xcarchive -name "CookiePrimeConsent.framework" -type d | head -1)
+        SIM_FRAMEWORK=$(find build/ios-simulator.xcarchive -name "CookiePrimeConsent.framework" -type d | head -1)
+        
+        echo "iOS framework: $IOS_FRAMEWORK"
+        echo "Simulator framework: $SIM_FRAMEWORK"
+        
+        if [ -z "$IOS_FRAMEWORK" ] || [ -z "$SIM_FRAMEWORK" ]; then
+            echo "❌ Could not find frameworks"
+            echo "=== iOS archive contents ==="
+            find build/ios.xcarchive -type d | head -20
+            echo "=== Simulator archive contents ==="
+            find build/ios-simulator.xcarchive -type d | head -20
+            exit 1
+        fi
+        
+        # Verify .swiftinterface files
+        echo "🔍 Checking for .swiftinterface files..."
+        find "$IOS_FRAMEWORK" -name "*.swiftinterface" | head -5
+        find "$SIM_FRAMEWORK" -name "*.swiftinterface" | head -5
+        
+        # Create XCFramework
         echo "📦 Creating XCFramework..."
         xcodebuild -create-xcframework \
-            -framework "build/ios.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework" \
-            -framework "build/ios-simulator.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework" \
+            -framework "$IOS_FRAMEWORK" \
+            -framework "$SIM_FRAMEWORK" \
             -output CookiePrimeConsent.xcframework || { echo "❌ XCFramework creation failed"; exit 1; }
         echo "✅ XCFramework created"
         
