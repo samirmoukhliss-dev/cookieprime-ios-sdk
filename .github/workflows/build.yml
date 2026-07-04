@@ -19,17 +19,6 @@ jobs:
       with:
         xcode-version: '16.2'
     
-    - name: Check Project Type
-      run: |
-        echo "🔍 Checking project structure..."
-        ls -la
-        echo ""
-        echo "=== Package.swift ==="
-        cat Package.swift 2>/dev/null || echo "No Package.swift"
-        echo ""
-        echo "=== Schemes ==="
-        xcodebuild -list 2>/dev/null | head -30 || echo "Could not list schemes"
-    
     - name: Build XCFramework
       run: |
         set -e
@@ -57,18 +46,30 @@ jobs:
             -quiet || { echo "❌ Simulator build failed"; exit 1; }
         echo "✅ Simulator build succeeded"
         
-        # Find the built products
+        # Find the built products - search more broadly
         echo "🔍 Finding built products..."
         
-        IOS_PRODUCT=$(find DerivedData -path "*/Release-iphoneos/*" -name "CookiePrimeConsent" | head -1)
-        SIM_PRODUCT=$(find DerivedData -path "*/Release-iphonesimulator/*" -name "CookiePrimeConsent" | head -1)
+        # List all files in Release directories to see what we have
+        echo "=== iOS Release files ==="
+        find DerivedData -path "*/Release-iphoneos/*" -type f | head -20
+        echo ""
+        echo "=== Simulator Release files ==="
+        find DerivedData -path "*/Release-iphonesimulator/*" -type f | head -20
+        echo ""
+        
+        # Find the library binary - could be named differently
+        IOS_PRODUCT=$(find DerivedData -path "*/Release-iphoneos/*" -type f | grep -v ".dSYM" | grep -v ".swift" | grep -v ".o" | grep -v ".h" | grep -v ".plist" | grep -v ".modulemap" | grep -v ".storyboard" | grep -v ".json" | head -1)
+        SIM_PRODUCT=$(find DerivedData -path "*/Release-iphonesimulator/*" -type f | grep -v ".dSYM" | grep -v ".swift" | grep -v ".o" | grep -v ".h" | grep -v ".plist" | grep -v ".modulemap" | grep -v ".storyboard" | grep -v ".json" | head -1)
         
         echo "iOS product: $IOS_PRODUCT"
         echo "Simulator product: $SIM_PRODUCT"
         
         if [ -z "$IOS_PRODUCT" ] || [ -z "$SIM_PRODUCT" ]; then
             echo "❌ Could not find built products"
-            find DerivedData -name "CookiePrimeConsent" | head -10
+            echo "=== All iOS files ==="
+            find DerivedData -path "*/Release-iphoneos/*" -type f | head -30
+            echo "=== All Simulator files ==="
+            find DerivedData -path "*/Release-iphonesimulator/*" -type f | head -30
             exit 1
         fi
         
@@ -77,7 +78,7 @@ jobs:
         file "$IOS_PRODUCT"
         file "$SIM_PRODUCT"
         
-        # For SPM static libraries, create frameworks manually
+        # Create framework structure
         echo "📦 Creating framework structure..."
         
         mkdir -p build/ios/CookiePrimeConsent.framework/Headers
@@ -85,31 +86,32 @@ jobs:
         mkdir -p build/sim/CookiePrimeConsent.framework/Headers
         mkdir -p build/sim/CookiePrimeConsent.framework/Modules
         
-        # Copy the static library as the framework binary
+        # Copy the library as the framework binary
         cp "$IOS_PRODUCT" build/ios/CookiePrimeConsent.framework/CookiePrimeConsent
         cp "$SIM_PRODUCT" build/sim/CookiePrimeConsent.framework/CookiePrimeConsent
         
         # Find and copy module files
-        IOS_MODULE=$(find DerivedData -path "*/Release-iphoneos/*" -name "*.swiftmodule" -type d | grep CookiePrimeConsent | head -1)
-        SIM_MODULE=$(find DerivedData -path "*/Release-iphonesimulator/*" -name "*.swiftmodule" -type d | grep CookiePrimeConsent | head -1)
+        echo "🔍 Copying module files..."
         
-        echo "iOS module: $IOS_MODULE"
-        echo "Simulator module: $SIM_MODULE"
-        
-        if [ -d "$IOS_MODULE" ]; then
-            cp -r "$IOS_MODULE" build/ios/CookiePrimeConsent.framework/Modules/
-        fi
-        if [ -d "$SIM_MODULE" ]; then
-            cp -r "$SIM_MODULE" build/sim/CookiePrimeConsent.framework/Modules/
-        fi
-        
-        # Also copy .swiftinterface files if they exist
-        find DerivedData -path "*/Release-iphoneos/*" -name "*.swiftinterface" | grep CookiePrimeConsent | while read f; do
-            cp "$f" build/ios/CookiePrimeConsent.framework/Modules/
+        find DerivedData -path "*/Release-iphoneos/*" -name "*.swiftmodule" -o -name "*.swiftinterface" -o -name "*.swiftdoc" -o -name "*.swiftsourceinfo" | while read f; do
+            if [ -f "$f" ]; then
+                echo "Copying iOS: $f"
+                cp "$f" build/ios/CookiePrimeConsent.framework/Modules/
+            fi
         done
-        find DerivedData -path "*/Release-iphonesimulator/*" -name "*.swiftinterface" | grep CookiePrimeConsent | while read f; do
-            cp "$f" build/sim/CookiePrimeConsent.framework/Modules/
+        
+        find DerivedData -path "*/Release-iphonesimulator/*" -name "*.swiftmodule" -o -name "*.swiftinterface" -o -name "*.swiftdoc" -o -name "*.swiftsourceinfo" | while read f; do
+            if [ -f "$f" ]; then
+                echo "Copying sim: $f"
+                cp "$f" build/sim/CookiePrimeConsent.framework/Modules/
+            fi
         done
+        
+        # List what's in the Modules directories
+        echo "=== iOS Modules ==="
+        ls -la build/ios/CookiePrimeConsent.framework/Modules/
+        echo "=== Sim Modules ==="
+        ls -la build/sim/CookiePrimeConsent.framework/Modules/
         
         # Create Info.plist
         cat > build/ios/CookiePrimeConsent.framework/Info.plist << 'EOF'
