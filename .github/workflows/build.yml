@@ -78,25 +78,13 @@ jobs:
                 # Check if it's the minimal broken one and fix it
                 if grep -q "^framework module CookiePrimeConsent {$" "$MODULE_MAP" && ! grep -q "requires" "$MODULE_MAP"; then
                     echo "⚠️ Module map is minimal, patching..."
-                    cat > "$MODULE_MAP" << 'EOF'
-framework module CookiePrimeConsent {
-  requires objc, objc_arc
-  export *
-  module * { export * }
-}
-EOF
+                    printf '%s\n' 'framework module CookiePrimeConsent {' '  requires objc, objc_arc' '  export *' '  module * { export * }' '}' > "$MODULE_MAP"
                     echo "✅ Patched module map"
                 fi
             else
                 echo "⚠️ No module map found, creating one..."
                 mkdir -p "$fw/Modules"
-                cat > "$MODULE_MAP" << 'EOF'
-framework module CookiePrimeConsent {
-  requires objc, objc_arc
-  export *
-  module * { export * }
-}
-EOF
+                printf '%s\n' 'framework module CookiePrimeConsent {' '  requires objc, objc_arc' '  export *' '  module * { export * }' '}' > "$MODULE_MAP"
                 echo "✅ Created module map"
             fi
         done
