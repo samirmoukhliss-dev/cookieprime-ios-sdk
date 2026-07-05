@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .library(
             name: "CookiePrimeConsent",
+            type: .dynamic,  // <-- THIS IS THE KEY CHANGE
             targets: ["CookiePrimeConsent"]
         )
     ],
