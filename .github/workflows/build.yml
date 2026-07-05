@@ -48,28 +48,24 @@ jobs:
             -quiet || { echo "❌ Simulator build failed"; exit 1; }
         echo "✅ Simulator build succeeded"
         
-        # Extract frameworks from archives
-        echo "📦 Extracting frameworks from archives..."
+        # Find frameworks (they might be in different locations)
+        echo "🔍 Finding frameworks..."
         
-        IOS_FRAMEWORK="build/ios.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework"
-        SIM_FRAMEWORK="build/ios-simulator.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework"
+        # Look for iOS framework
+        IOS_FRAMEWORK=$(find build/ios.xcarchive -name "CookiePrimeConsent.framework" -type d | head -1)
+        SIM_FRAMEWORK=$(find build/ios-simulator.xcarchive -name "CookiePrimeConsent.framework" -type d | head -1)
         
-        if [ ! -d "$IOS_FRAMEWORK" ]; then
-          echo "❌ iOS framework not found at: $IOS_FRAMEWORK"
-          echo "Looking for framework..."
-          find build/ios.xcarchive -name "*.framework" -type d
+        echo "iOS framework: $IOS_FRAMEWORK"
+        echo "Simulator framework: $SIM_FRAMEWORK"
+        
+        if [ -z "$IOS_FRAMEWORK" ] || [ -z "$SIM_FRAMEWORK" ]; then
+          echo "❌ Could not find frameworks"
+          echo "=== iOS archive contents ==="
+          find build/ios.xcarchive -type d | head -20
+          echo "=== Simulator archive contents ==="
+          find build/ios-simulator.xcarchive -type d | head -20
           exit 1
         fi
-        
-        if [ ! -d "$SIM_FRAMEWORK" ]; then
-          echo "❌ Simulator framework not found at: $SIM_FRAMEWORK"
-          echo "Looking for framework..."
-          find build/ios-simulator.xcarchive -name "*.framework" -type d
-          exit 1
-        fi
-        
-        echo "✅ iOS framework: $IOS_FRAMEWORK"
-        echo "✅ Simulator framework: $SIM_FRAMEWORK"
         
         # Verify frameworks
         echo "=== iOS Framework ==="
