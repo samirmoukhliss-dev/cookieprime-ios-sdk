@@ -24,7 +24,7 @@ jobs:
         set -e
         echo "📦 Building CookiePrime iOS SDK XCFramework..."
         
-        # Clean build directory
+        # Clean
         rm -rf DerivedData build
         
         # Build for iOS device
@@ -73,23 +73,31 @@ jobs:
         echo "📦 Creating framework structure..."
         
         mkdir -p build/ios/CookiePrimeConsent.framework/Modules
-        mkdir -p build/ios/CookiePrimeConsent.framework/Headers
         mkdir -p build/sim/CookiePrimeConsent.framework/Modules
-        mkdir -p build/sim/CookiePrimeConsent.framework/Headers
         
         # Copy static library as framework binary
         cp build/libCookiePrimeConsent-ios.a build/ios/CookiePrimeConsent.framework/CookiePrimeConsent
         cp build/libCookiePrimeConsent-sim.a build/sim/CookiePrimeConsent.framework/CookiePrimeConsent
         
-        # Copy Swift module files
-        echo "📦 Copying Swift module files..."
+        # Copy ONLY essential Swift module files (NOT the huge .abi.json)
+        echo "📦 Copying essential Swift module files..."
         
+        # iOS - copy only .swiftinterface, .swiftmodule, .swiftdoc, .swiftsourceinfo
         if [ -d "$IOS_SWIFTMODULE" ]; then
-          cp -r "$IOS_SWIFTMODULE"/* build/ios/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp "$IOS_SWIFTMODULE"/*.swiftinterface build/ios/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp "$IOS_SWIFTMODULE"/*.swiftmodule build/ios/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp "$IOS_SWIFTMODULE"/*.swiftdoc build/ios/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp "$IOS_SWIFTMODULE"/*.swiftsourceinfo build/ios/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp -r "$IOS_SWIFTMODULE"/Project build/ios/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
         fi
         
+        # Simulator - copy only .swiftinterface, .swiftmodule, .swiftdoc, .swiftsourceinfo
         if [ -d "$SIM_SWIFTMODULE" ]; then
-          cp -r "$SIM_SWIFTMODULE"/* build/sim/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp "$SIM_SWIFTMODULE"/*.swiftinterface build/sim/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp "$SIM_SWIFTMODULE"/*.swiftmodule build/sim/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp "$SIM_SWIFTMODULE"/*.swiftdoc build/sim/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp "$SIM_SWIFTMODULE"/*.swiftsourceinfo build/sim/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+          cp -r "$SIM_SWIFTMODULE"/Project build/sim/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
         fi
         
         # Create Info.plist
@@ -118,16 +126,12 @@ jobs:
         EOF
         cp build/ios/CookiePrimeConsent.framework/Modules/module.modulemap build/sim/CookiePrimeConsent.framework/Modules/
         
-        # Verify frameworks
-        echo "=== iOS Framework ==="
-        ls -la build/ios/CookiePrimeConsent.framework/
-        echo "=== iOS Modules ==="
-        ls -la build/ios/CookiePrimeConsent.framework/Modules/
-        
-        echo "=== Simulator Framework ==="
-        ls -la build/sim/CookiePrimeConsent.framework/
-        echo "=== Simulator Modules ==="
-        ls -la build/sim/CookiePrimeConsent.framework/Modules/
+        # Verify frameworks - show file sizes
+        echo "=== iOS Modules (file sizes) ==="
+        ls -lh build/ios/CookiePrimeConsent.framework/Modules/
+        echo ""
+        echo "=== Simulator Modules (file sizes) ==="
+        ls -lh build/sim/CookiePrimeConsent.framework/Modules/
         
         # Create XCFramework
         echo "📦 Creating XCFramework..."
@@ -137,13 +141,14 @@ jobs:
             -output CookiePrimeConsent.xcframework || { echo "❌ XCFramework creation failed"; exit 1; }
         echo "✅ XCFramework created"
         
-        # Verify structure
+        # Verify structure and check file sizes
         echo "📦 Verifying XCFramework..."
-        find CookiePrimeConsent.xcframework -type f | head -30
+        echo "Total size:"
+        du -sh CookiePrimeConsent.xcframework
         
-        # Check for swiftinterface files
-        echo "📦 Checking for swiftinterface files..."
-        find CookiePrimeConsent.xcframework -name "*.swiftinterface" | head -10
+        echo ""
+        echo "Modules files (should NOT contain .abi.json):"
+        find CookiePrimeConsent.xcframework -name "Modules" -type d -exec ls -lh {} \;
         
         # Zip
         echo "📦 Zipping XCFramework..."
