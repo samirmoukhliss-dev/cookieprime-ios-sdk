@@ -24,35 +24,88 @@ jobs:
         set -e
         echo "📦 Building CookiePrime iOS SDK XCFramework..."
         
-        # Build for iOS device (dynamic framework)
+        # Build for iOS device
         echo "📱 Building for iOS device..."
-        xcodebuild archive \
+        xcodebuild build \
             -scheme CookiePrimeConsent \
             -configuration Release \
             -destination "generic/platform=iOS" \
-            -archivePath "build/ios.xcarchive" \
+            -derivedDataPath DerivedData \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            SKIP_INSTALL=NO \
-            -quiet || { echo "❌ iOS archive failed"; exit 1; }
-        echo "✅ iOS archive succeeded"
+            -quiet || { echo "❌ iOS build failed"; exit 1; }
+        echo "✅ iOS build succeeded"
         
-        # Build for iOS Simulator (dynamic framework)
+        # Build for iOS Simulator
         echo "📱 Building for iOS Simulator..."
-        xcodebuild archive \
+        xcodebuild build \
             -scheme CookiePrimeConsent \
             -configuration Release \
             -destination "generic/platform=iOS Simulator" \
-            -archivePath "build/sim.xcarchive" \
+            -derivedDataPath DerivedData \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            SKIP_INSTALL=NO \
-            -quiet || { echo "❌ Simulator archive failed"; exit 1; }
-        echo "✅ Simulator archive succeeded"
+            -quiet || { echo "❌ Simulator build failed"; exit 1; }
+        echo "✅ Simulator build succeeded"
         
-        # Create XCFramework from archives
+        # Find the built frameworks
+        echo "🔍 Locating built frameworks..."
+        
+        IOS_FRAMEWORK=$(find DerivedData -path "*/Release-iphoneos/CookiePrimeConsent.framework" -type d | head -1)
+        SIM_FRAMEWORK=$(find DerivedData -path "*/Release-iphonesimulator/CookiePrimeConsent.framework" -type d | head -1)
+        
+        if [ -z "$IOS_FRAMEWORK" ]; then
+            echo "❌ Could not find iOS framework"
+            find DerivedData -name "*.framework" -type d
+            exit 1
+        fi
+        
+        if [ -z "$SIM_FRAMEWORK" ]; then
+            echo "❌ Could not find Simulator framework"
+            find DerivedData -name "*.framework" -type d
+            exit 1
+        fi
+        
+        echo "✅ iOS Framework: $IOS_FRAMEWORK"
+        echo "✅ Simulator Framework: $SIM_FRAMEWORK"
+        
+        # Verify module maps exist and fix if needed
+        echo "🔍 Checking module maps..."
+        for fw in "$IOS_FRAMEWORK" "$SIM_FRAMEWORK"; do
+            MODULE_MAP="$fw/Modules/module.modulemap"
+            if [ -f "$MODULE_MAP" ]; then
+                echo "Found module map: $MODULE_MAP"
+                cat "$MODULE_MAP"
+                
+                # Check if it's the minimal broken one and fix it
+                if grep -q "^framework module CookiePrimeConsent {$" "$MODULE_MAP" && ! grep -q "requires" "$MODULE_MAP"; then
+                    echo "⚠️ Module map is minimal, patching..."
+                    cat > "$MODULE_MAP" << 'EOF'
+framework module CookiePrimeConsent {
+  requires objc, objc_arc
+  export *
+  module * { export * }
+}
+EOF
+                    echo "✅ Patched module map"
+                fi
+            else
+                echo "⚠️ No module map found, creating one..."
+                mkdir -p "$fw/Modules"
+                cat > "$MODULE_MAP" << 'EOF'
+framework module CookiePrimeConsent {
+  requires objc, objc_arc
+  export *
+  module * { export * }
+}
+EOF
+                echo "✅ Created module map"
+            fi
+        done
+        
+        # Create XCFramework
         echo "📦 Creating XCFramework..."
         xcodebuild -create-xcframework \
-            -framework "build/ios.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework" \
-            -framework "build/sim.xcarchive/Products/Library/Frameworks/CookiePrimeConsent.framework" \
+            -framework "$IOS_FRAMEWORK" \
+            -framework "$SIM_FRAMEWORK" \
             -output "CookiePrimeConsent.xcframework" \
             || { echo "❌ XCFramework creation failed"; exit 1; }
         echo "✅ XCFramework created"
@@ -61,8 +114,8 @@ jobs:
         echo "📦 Verifying XCFramework structure..."
         find CookiePrimeConsent.xcframework -type f | sort
         
-        # Check module maps are correct
-        echo "🔍 Checking module maps..."
+        # Final check of module maps in XCFramework
+        echo "🔍 Final module map check..."
         for map in $(find CookiePrimeConsent.xcframework -name "module.modulemap"); do
           echo "=== $map ==="
           cat "$map"
