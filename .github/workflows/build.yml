@@ -1,201 +1,113 @@
-# .github/workflows/test-sdk.yml
-name: Build and Test Demo
+name: Build and Release
 
 on:
+  push:
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 jobs:
-  test:
+  build:
     runs-on: macos-14
     
     steps:
     - name: Checkout
       uses: actions/checkout@v4
     
-    - name: Verify XCFramework
-      run: |
-        echo "🔍 Checking XCFramework..."
-        if [ ! -d "CookiePrimeDemo/Frameworks/CookiePrimeConsent.xcframework" ]; then
-          echo "❌ XCFramework not found"
-          exit 1
-        fi
-        echo "✅ XCFramework found"
-    
-    - name: Patch Swift Interface Files
-      run: |
-        echo "🔧 Patching .swiftinterface files..."
-        
-        # Patch the simulator slice
-        INTERFACE_FILE="CookiePrimeDemo/Frameworks/CookiePrimeConsent.xcframework/ios-arm64_x86_64-simulator/CookiePrimeConsent.framework/Modules/*.swiftinterface"
-        
-        # Remove the __swift_reflection_version and module_abi_version absolute paths
-        for file in CookiePrimeDemo/Frameworks/CookiePrimeConsent.xcframework/ios-arm64_x86_64-simulator/CookiePrimeConsent.framework/Modules/*.swiftinterface; do
-          if [ -f "$file" ]; then
-            echo "Patching: $file"
-            # Remove any absolute paths starting with /Users/
-            sed -i '' 's|/Users/[^ ]*||g' "$file" 2>/dev/null || sed -i 's|/Users/[^ ]*||g' "$file"
-          fi
-        done
-        
-        # Also patch the device slice (though we're building for simulator)
-        for file in CookiePrimeDemo/Frameworks/CookiePrimeConsent.xcframework/ios-arm64/CookiePrimeConsent.framework/Modules/*.swiftinterface; do
-          if [ -f "$file" ]; then
-            echo "Patching: $file"
-            sed -i '' 's|/Users/[^ ]*||g' "$file" 2>/dev/null || sed -i 's|/Users/[^ ]*||g' "$file"
-          fi
-        done
-        
-        echo "✅ Patching complete"
-        
-        # Verify the patch
-        echo "📂 Verifying patched interface:"
-        head -10 CookiePrimeDemo/Frameworks/CookiePrimeConsent.xcframework/ios-arm64_x86_64-simulator/CookiePrimeConsent.framework/Modules/*.swiftinterface | head -10
-    
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
         xcode-version: '16.2'
     
-    - name: Create Xcode Project
+    - name: Build XCFramework
       run: |
-        echo "📱 Creating Xcode project..."
+        set -e
+        echo "📦 Building CookiePrime iOS SDK XCFramework..."
         
-        cd CookiePrimeDemo
+        # Clean build directory
+        rm -rf DerivedData build
         
-        brew install xcodegen
+        # Build for iOS device using archive (creates portable framework)
+        echo "📱 Building for iOS device..."
+        xcodebuild archive \
+            -scheme CookiePrimeConsent \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath build/ios.xcarchive \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            SKIP_INSTALL=NO \
+            -quiet || { echo "❌ iOS build failed"; exit 1; }
+        echo "✅ iOS build succeeded"
         
-        cat > project.yml << 'PROJEOF'
-        name: CookiePrimeDemo
-        options:
-          bundleIdPrefix: com.cookieprime
-          deploymentTarget:
-            iOS: 14.0
-        settings:
-          base:
-            DEVELOPMENT_TEAM: ""
-            CODE_SIGN_IDENTITY: ""
-            CODE_SIGNING_REQUIRED: NO
-            CODE_SIGNING_ALLOWED: NO
-            ENABLE_BITCODE: NO
-            SWIFT_VERSION: 5.9
-            ARCHS: arm64
-            VALID_ARCHS: arm64
-            EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
-            FRAMEWORK_SEARCH_PATHS: $(inherited) $(PROJECT_DIR)/Frameworks
-            OTHER_LDFLAGS: $(inherited) -ObjC -all_load
-        targets:
-          CookiePrimeDemo:
-            type: application
-            platform: iOS
-            sources:
-              - Sources
-            dependencies:
-              - framework: Frameworks/CookiePrimeConsent.xcframework
-                embed: false
-            settings:
-              base:
-                INFOPLIST_FILE: Sources/Info.plist
-                PRODUCT_BUNDLE_IDENTIFIER: com.cookieprime.demo
-                FRAMEWORK_SEARCH_PATHS: $(inherited) $(PROJECT_DIR)/Frameworks
-                OTHER_LDFLAGS: $(inherited) -ObjC -all_load
-                ARCHS: arm64
-                VALID_ARCHS: arm64
-                EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
-        PROJEOF
+        # Build for iOS Simulator using archive
+        echo "📱 Building for iOS Simulator..."
+        xcodebuild archive \
+            -scheme CookiePrimeConsent \
+            -configuration Release \
+            -destination "generic/platform=iOS Simulator" \
+            -archivePath build/ios-simulator.xcarchive \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            SKIP_INSTALL=NO \
+            -quiet || { echo "❌ Simulator build failed"; exit 1; }
+        echo "✅ Simulator build succeeded"
         
-        xcodegen generate
-        echo "✅ Project created"
-    
-    - name: Build App
-      run: |
-        echo "=========================================="
-        echo "📱 Building..."
-        echo "=========================================="
+        # Find frameworks in archives
+        echo "🔍 Finding frameworks..."
         
-        cd CookiePrimeDemo
+        IOS_FRAMEWORK=$(find build/ios.xcarchive -name "CookiePrimeConsent.framework" -type d | head -1)
+        SIM_FRAMEWORK=$(find build/ios-simulator.xcarchive -name "CookiePrimeConsent.framework" -type d | head -1)
         
-        xcodebuild build \
-            -project CookiePrimeDemo.xcodeproj \
-            -scheme CookiePrimeDemo \
-            -configuration Debug \
-            -destination "platform=iOS Simulator,name=iPhone 15 Pro,OS=17.5" \
-            -derivedDataPath DerivedData \
-            FRAMEWORK_SEARCH_PATHS="$(pwd)/Frameworks" \
-            OTHER_LDFLAGS="-ObjC -all_load" \
-            -quiet 2>&1 | tee build.log
+        echo "iOS framework: $IOS_FRAMEWORK"
+        echo "Simulator framework: $SIM_FRAMEWORK"
         
-        if [ ${PIPESTATUS[0]} -ne 0 ]; then
-          echo ""
-          echo "❌ BUILD FAILED"
-          echo "=== Errors ==="
-          grep "error:" build.log | head -20
+        if [ -z "$IOS_FRAMEWORK" ] || [ -z "$SIM_FRAMEWORK" ]; then
+          echo "❌ Could not find frameworks"
+          echo "=== iOS archive contents ==="
+          find build/ios.xcarchive -type d | head -20
+          echo "=== Simulator archive contents ==="
+          find build/ios-simulator.xcarchive -type d | head -20
           exit 1
         fi
         
-        echo "✅ Build succeeded!"
+        # Verify frameworks have Modules directory
+        echo "=== iOS Modules ==="
+        ls -la "$IOS_FRAMEWORK/Modules/" 2>/dev/null || echo "No Modules directory!"
+        echo "=== Simulator Modules ==="
+        ls -la "$SIM_FRAMEWORK/Modules/" 2>/dev/null || echo "No Modules directory!"
+        
+        # Create XCFramework
+        echo "📦 Creating XCFramework..."
+        xcodebuild -create-xcframework \
+            -framework "$IOS_FRAMEWORK" \
+            -framework "$SIM_FRAMEWORK" \
+            -output CookiePrimeConsent.xcframework || { echo "❌ XCFramework creation failed"; exit 1; }
+        echo "✅ XCFramework created"
+        
+        # Verify structure
+        echo "📦 Verifying XCFramework..."
+        find CookiePrimeConsent.xcframework -type f | head -30
+        
+        # Check for swiftinterface files
+        echo "📦 Checking for swiftinterface files..."
+        find CookiePrimeConsent.xcframework -name "*.swiftinterface" | head -10
+        
+        # Zip
+        echo "📦 Zipping XCFramework..."
+        zip -r CookiePrimeConsent.xcframework.zip CookiePrimeConsent.xcframework > /dev/null
+        
+        echo "✅ Build complete!"
+        echo "📦 Artifact: CookiePrimeConsent.xcframework.zip"
+        ls -lh CookiePrimeConsent.xcframework.zip
     
-    - name: Run App
-      run: |
-        echo "=========================================="
-        echo "🚀 Running..."
-        echo "=========================================="
-        
-        cd CookiePrimeDemo
-        
-        APP_PATH=$(find DerivedData -name "CookiePrimeDemo.app" | head -1)
-        
-        if [ -z "$APP_PATH" ]; then
-          echo "❌ Could not find app"
-          exit 1
-        fi
-        
-        echo "📱 App: $APP_PATH"
-        
-        xcrun simctl boot "iPhone 15 Pro" 2>/dev/null || true
-        sleep 5
-        
-        xcrun simctl install "iPhone 15 Pro" "$APP_PATH"
-        
-        xcrun simctl launch --console "iPhone 15 Pro" com.cookieprime.demo > app_logs.txt 2>&1 &
-        
-        sleep 20
-        
-        echo ""
-        echo "=========================================="
-        echo "📋 App Console Logs:"
-        echo "=========================================="
-        cat app_logs.txt
-        
-        echo ""
-        echo "=========================================="
-        echo "📋 Test Results:"
-        echo "=========================================="
-        
-        if grep -q "SDK Initialized successfully" app_logs.txt; then
-          echo "✅ SDK INITIALIZATION - PASSED"
-        else
-          echo "❌ SDK INITIALIZATION - FAILED"
-        fi
-        
-        if grep -q "All SDKs deferred successfully" app_logs.txt; then
-          echo "✅ SDK DEFERRAL - PASSED"
-        else
-          echo "❌ SDK DEFERRAL - FAILED"
-        fi
-        
-        if grep -q "Consent received" app_logs.txt; then
-          echo "✅ CONSENT BANNER - PASSED"
-        else
-          echo "⚠️ CONSENT - PENDING (banner shown but no user interaction)"
-        fi
-        
-        echo "=========================================="
-    
-    - name: Upload Logs
-      if: always()
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: test-logs
-        path: |
-          CookiePrimeDemo/app_logs.txt
-          CookiePrimeDemo/build.log
+        name: CookiePrimeConsent.xcframework
+        path: CookiePrimeConsent.xcframework.zip
+    
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: CookiePrimeConsent.xcframework.zip
+        generate_release_notes: true
