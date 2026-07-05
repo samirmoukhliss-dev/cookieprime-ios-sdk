@@ -27,59 +27,113 @@ jobs:
         # Clean build directory
         rm -rf DerivedData build
         
-        # Build for iOS device using archive (creates portable framework)
+        # Build for iOS device
         echo "📱 Building for iOS device..."
-        xcodebuild archive \
+        xcodebuild build \
             -scheme CookiePrimeConsent \
             -configuration Release \
             -destination "generic/platform=iOS" \
-            -archivePath build/ios.xcarchive \
+            -derivedDataPath DerivedData \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            SKIP_INSTALL=NO \
             -quiet || { echo "❌ iOS build failed"; exit 1; }
         echo "✅ iOS build succeeded"
         
-        # Build for iOS Simulator using archive
+        # Build for iOS Simulator
         echo "📱 Building for iOS Simulator..."
-        xcodebuild archive \
+        xcodebuild build \
             -scheme CookiePrimeConsent \
             -configuration Release \
             -destination "generic/platform=iOS Simulator" \
-            -archivePath build/ios-simulator.xcarchive \
+            -derivedDataPath DerivedData \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            SKIP_INSTALL=NO \
             -quiet || { echo "❌ Simulator build failed"; exit 1; }
         echo "✅ Simulator build succeeded"
         
-        # Find frameworks in archives
-        echo "🔍 Finding frameworks..."
+        # Find object files and swiftmodule directories
+        echo "🔍 Finding build artifacts..."
         
-        IOS_FRAMEWORK=$(find build/ios.xcarchive -name "CookiePrimeConsent.framework" -type d | head -1)
-        SIM_FRAMEWORK=$(find build/ios-simulator.xcarchive -name "CookiePrimeConsent.framework" -type d | head -1)
+        IOS_OBJ_DIR="DerivedData/Build/Intermediates.noindex/CookiePrimeConsent.build/Release-iphoneos/CookiePrimeConsent.build/Objects-normal/arm64"
+        SIM_OBJ_DIR="DerivedData/Build/Intermediates.noindex/CookiePrimeConsent.build/Release-iphonesimulator/CookiePrimeConsent.build/Objects-normal/arm64"
         
-        echo "iOS framework: $IOS_FRAMEWORK"
-        echo "Simulator framework: $SIM_FRAMEWORK"
+        IOS_SWIFTMODULE="DerivedData/Build/Products/Release-iphoneos/CookiePrimeConsent.swiftmodule"
+        SIM_SWIFTMODULE="DerivedData/Build/Products/Release-iphonesimulator/CookiePrimeConsent.swiftmodule"
         
-        if [ -z "$IOS_FRAMEWORK" ] || [ -z "$SIM_FRAMEWORK" ]; then
-          echo "❌ Could not find frameworks"
-          echo "=== iOS archive contents ==="
-          find build/ios.xcarchive -type d | head -20
-          echo "=== Simulator archive contents ==="
-          find build/ios-simulator.xcarchive -type d | head -20
-          exit 1
+        mkdir -p build
+        
+        # Create static libraries
+        echo "📦 Creating iOS static library..."
+        find "$IOS_OBJ_DIR" -name "*.o" -exec libtool -static -o build/libCookiePrimeConsent-ios.a {} \+ 2>/dev/null || true
+        echo "✅ iOS static library created"
+        
+        echo "📦 Creating Simulator static library..."
+        find "$SIM_OBJ_DIR" -name "*.o" -exec libtool -static -o build/libCookiePrimeConsent-sim.a {} \+ 2>/dev/null || true
+        echo "✅ Simulator static library created"
+        
+        # Create framework structure
+        echo "📦 Creating framework structure..."
+        
+        mkdir -p build/ios/CookiePrimeConsent.framework/Modules
+        mkdir -p build/ios/CookiePrimeConsent.framework/Headers
+        mkdir -p build/sim/CookiePrimeConsent.framework/Modules
+        mkdir -p build/sim/CookiePrimeConsent.framework/Headers
+        
+        # Copy static library as framework binary
+        cp build/libCookiePrimeConsent-ios.a build/ios/CookiePrimeConsent.framework/CookiePrimeConsent
+        cp build/libCookiePrimeConsent-sim.a build/sim/CookiePrimeConsent.framework/CookiePrimeConsent
+        
+        # Copy Swift module files
+        echo "📦 Copying Swift module files..."
+        
+        if [ -d "$IOS_SWIFTMODULE" ]; then
+          cp -r "$IOS_SWIFTMODULE"/* build/ios/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
         fi
         
-        # Verify frameworks have Modules directory
+        if [ -d "$SIM_SWIFTMODULE" ]; then
+          cp -r "$SIM_SWIFTMODULE"/* build/sim/CookiePrimeConsent.framework/Modules/ 2>/dev/null || true
+        fi
+        
+        # Create Info.plist
+        cat > build/ios/CookiePrimeConsent.framework/Info.plist << 'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key><string>CookiePrimeConsent</string>
+            <key>CFBundleIdentifier</key><string>com.cookieprime.consent</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>CookiePrimeConsent</string>
+            <key>CFBundlePackageType</key><string>FMWK</string>
+            <key>CFBundleShortVersionString</key><string>1.0.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+        </dict>
+        </plist>
+        EOF
+        cp build/ios/CookiePrimeConsent.framework/Info.plist build/sim/CookiePrimeConsent.framework/Info.plist
+        
+        # Create module map
+        cat > build/ios/CookiePrimeConsent.framework/Modules/module.modulemap << 'EOF'
+        framework module CookiePrimeConsent {
+          export *
+        }
+        EOF
+        cp build/ios/CookiePrimeConsent.framework/Modules/module.modulemap build/sim/CookiePrimeConsent.framework/Modules/
+        
+        # Verify frameworks
+        echo "=== iOS Framework ==="
+        ls -la build/ios/CookiePrimeConsent.framework/
         echo "=== iOS Modules ==="
-        ls -la "$IOS_FRAMEWORK/Modules/" 2>/dev/null || echo "No Modules directory!"
+        ls -la build/ios/CookiePrimeConsent.framework/Modules/
+        
+        echo "=== Simulator Framework ==="
+        ls -la build/sim/CookiePrimeConsent.framework/
         echo "=== Simulator Modules ==="
-        ls -la "$SIM_FRAMEWORK/Modules/" 2>/dev/null || echo "No Modules directory!"
+        ls -la build/sim/CookiePrimeConsent.framework/Modules/
         
         # Create XCFramework
         echo "📦 Creating XCFramework..."
         xcodebuild -create-xcframework \
-            -framework "$IOS_FRAMEWORK" \
-            -framework "$SIM_FRAMEWORK" \
+            -framework build/ios/CookiePrimeConsent.framework \
+            -framework build/sim/CookiePrimeConsent.framework \
             -output CookiePrimeConsent.xcframework || { echo "❌ XCFramework creation failed"; exit 1; }
         echo "✅ XCFramework created"
         
