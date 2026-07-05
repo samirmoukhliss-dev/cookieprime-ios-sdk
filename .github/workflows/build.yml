@@ -46,58 +46,32 @@ jobs:
             -quiet || { echo "❌ Simulator build failed"; exit 1; }
         echo "✅ Simulator build succeeded"
         
-        # Debug: Show all build products
-        echo "=== Build Products Directory ==="
-        ls -la DerivedData/Build/Products/
-        echo ""
-        echo "=== Release-iphoneos ==="
-        ls -la DerivedData/Build/Products/Release-iphoneos/ 2>/dev/null || echo "Directory not found"
-        echo ""
-        echo "=== Release-iphonesimulator ==="
-        ls -la DerivedData/Build/Products/Release-iphonesimulator/ 2>/dev/null || echo "Directory not found"
-        echo ""
-        echo "=== Full find for .framework ==="
-        find DerivedData -name "*.framework" -type d 2>/dev/null || echo "No frameworks found"
-        echo ""
-        echo "=== Full find for .a ==="
-        find DerivedData -name "*.a" -type f 2>/dev/null | head -10
-        echo ""
-        echo "=== Full find for .swiftmodule ==="
-        find DerivedData -name "*.swiftmodule" -type d 2>/dev/null | head -10
-        
-        # Find frameworks using broader search
+        # Find the built frameworks
         echo "🔍 Finding frameworks..."
         
-        # Look for iOS framework - check standard locations
-        IOS_FRAMEWORK=""
-        if [ -d "DerivedData/Build/Products/Release-iphoneos/CookiePrimeConsent.framework" ]; then
-          IOS_FRAMEWORK="DerivedData/Build/Products/Release-iphoneos/CookiePrimeConsent.framework"
-        elif [ -d "DerivedData/Build/Products/Release-iphoneos/PackageFrameworks/CookiePrimeConsent.framework" ]; then
-          IOS_FRAMEWORK="DerivedData/Build/Products/Release-iphoneos/PackageFrameworks/CookiePrimeConsent.framework"
-        fi
-        
-        SIM_FRAMEWORK=""
-        if [ -d "DerivedData/Build/Products/Release-iphonesimulator/CookiePrimeConsent.framework" ]; then
-          SIM_FRAMEWORK="DerivedData/Build/Products/Release-iphonesimulator/CookiePrimeConsent.framework"
-        elif [ -d "DerivedData/Build/Products/Release-iphonesimulator/PackageFrameworks/CookiePrimeConsent.framework" ]; then
-          SIM_FRAMEWORK="DerivedData/Build/Products/Release-iphonesimulator/PackageFrameworks/CookiePrimeConsent.framework"
-        fi
+        IOS_FRAMEWORK=$(find DerivedData -path "*/Release-iphoneos/*.framework" -name "CookiePrimeConsent.framework" -type d | head -1)
+        SIM_FRAMEWORK=$(find DerivedData -path "*/Release-iphonesimulator/*.framework" -name "CookiePrimeConsent.framework" -type d | head -1)
         
         echo "iOS framework: $IOS_FRAMEWORK"
         echo "Simulator framework: $SIM_FRAMEWORK"
         
         if [ -z "$IOS_FRAMEWORK" ] || [ -z "$SIM_FRAMEWORK" ]; then
           echo "❌ Could not find frameworks"
-          echo "=== Full find for CookiePrimeConsent ==="
-          find DerivedData -name "*CookiePrimeConsent*" -type d 2>/dev/null | head -20
+          echo "=== Build Products ==="
+          find DerivedData/Build/Products -type d | head -20
           exit 1
         fi
         
         # Verify frameworks
         echo "=== iOS Framework ==="
         ls -la "$IOS_FRAMEWORK"
+        echo "=== iOS Modules ==="
+        ls -la "$IOS_FRAMEWORK/Modules/" 2>/dev/null || echo "No Modules directory"
+        
         echo "=== Simulator Framework ==="
         ls -la "$SIM_FRAMEWORK"
+        echo "=== Simulator Modules ==="
+        ls -la "$SIM_FRAMEWORK/Modules/" 2>/dev/null || echo "No Modules directory"
         
         # Create XCFramework
         echo "📦 Creating XCFramework..."
