@@ -118,12 +118,11 @@ jobs:
         EOF
         cp build/ios/CookiePrimeConsent.framework/Info.plist build/sim/CookiePrimeConsent.framework/Info.plist
         
-        # Create PROPER module map (THE FIX)
+        # Create PROPER module map for pure Swift framework (NO umbrella header, NO module *)
         cat > build/ios/CookiePrimeConsent.framework/Modules/module.modulemap << 'EOF'
         framework module CookiePrimeConsent {
           requires objc, objc_arc
           export *
-          module * { export * }
         }
         EOF
         cp build/ios/CookiePrimeConsent.framework/Modules/module.modulemap build/sim/CookiePrimeConsent.framework/Modules/
