@@ -1,36 +1,44 @@
-COOKIEPRIME SDK PROPRIETARY LICENSE AGREEMENT
+# CookiePrime iOS SDK License Agreement
 
-Copyright (c) 2025 CookiePrime. All Rights Reserved.
+Copyright (c) 2026 CookiePrime. All Rights Reserved.
 
-NOTICE: This software and its source code are proprietary and confidential.
-Unauthorized copying, modification, distribution, or use is strictly prohibited.
+This software and its source code are provided for evaluation, integration,
+and personal use. By downloading, copying, or using this software, you agree
+to the terms below.
 
-1. LICENSE GRANT
-Subject to your compliance with these terms and payment of applicable fees,
-CookiePrime grants you a limited, non-exclusive, non-transferable, revocable
-license to integrate the CookiePrime iOS SDK into your mobile applications
-for the sole purpose of consent management.
+## 1. Grant of License
 
-2. RESTRICTIONS
-You MAY NOT:
-- Copy, modify, or create derivative works of the SDK
-- Reverse engineer, decompile, or disassemble the SDK
-- Remove or alter any copyright, trademark, or proprietary notices
-- Distribute, sublicense, lease, rent, or sell the SDK
-- Use the SDK to build a competing product or service
+CookiePrime grants you a non-exclusive, non-transferable, revocable license
+to integrate the CookiePrime iOS SDK into your applications for the purpose
+of consent management.
 
-3. INTELLECTUAL PROPERTY
-All rights, title, and interest in the SDK, including all intellectual property
-rights, remain the exclusive property of CookiePrime.
+## 2. Permitted Use
 
-4. AUDIT RIGHTS
-CookiePrime reserves the right to audit your use of the SDK to ensure
-compliance with this agreement.
+You may:
+- Read, study, and modify the source code for your own integration
+- Include the SDK in your applications
+- Distribute applications that contain the SDK
 
-5. TERMINATION
-Your license terminates automatically if you breach these terms.
+## 3. Restrictions
 
-6. GOVERNING LAW
-This agreement is governed by the laws of USA
+You may not:
+- Sell, sublicense, or redistribute this SDK as a standalone product
+- Represent this SDK as your own original work
+- Remove copyright notices from source files
 
-By integrating the CookiePrime SDK, you agree to these terms.
+## 4. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+## 5. Limitation of Liability
+
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---
+
+For commercial licensing inquiries, contact samir.moukhliss@cookieprime.com.
