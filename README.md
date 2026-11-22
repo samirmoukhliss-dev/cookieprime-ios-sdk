@@ -1,16 +1,18 @@
 # 🍪 CookiePrime iOS SDK
 
-Privacy-first consent management for iOS with deferred SDK initialization.
-Tracking SDKs are detected but never initialized until the user consents.
+Privacy-first, zero-dependency consent management for iOS with deferred SDK initialization.
+Tracking SDKs are detected and held in an execution queue—never initialized until the user explicitly consents.
+
+> **Status Note:** This repository is published as a lightweight, inspectable blueprint for developer evaluation and UX testing. If you plan to deploy it in a production app subject to strict GDPR/ePrivacy enforcement or App Store review, please review the **Legal Compliance & Production Checklist** below before shipping.
 
 ## Features
 
-- **Zero pre-consent data collection** — SDKs never initialize without consent
-- **8-method SDK detection** — automatically detects 40+ tracking SDKs
-- **Complete blocking** — SDK code never executes without consent
-- **Offline support** — works without network connectivity
-- **Apple privacy compliant** — includes `PrivacyInfo.xcprivacy`
-- **SwiftUI & UIKit** — native UI components for both
+- **Zero pre-consent execution** — `DeferredSDKLoader` queues SDK initialization closures until consent is granted
+- **Zero external dependencies** — 100% native Apple frameworks (`Foundation`, `Combine`, `OSLog`, `UIKit`, `SwiftUI`)
+- **8-method SDK detection** — scans for 40+ tracking SDKs via classes, selectors, bundles, URL schemes, and `Info.plist`
+- **Offline-first support** — works without network connectivity (`offlineMode: true`)
+- **Apple privacy manifest ready** — includes `PrivacyInfo.xcprivacy`
+- **SwiftUI & UIKit** — native UI components and `@MainActor ObservableObject` bindings
 
 ## Requirements
 
@@ -26,7 +28,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/<YOUR-GITHUB-USERNAME>/cookieprime-ios-sdk", from: "1.0.0")
+    .package(url: "https://github.com", from: "1.0.0")
 ]
 ```
 
@@ -43,8 +45,8 @@ Use this if you prefer to vendor a prebuilt binary instead of using SPM.
 **Step 1 — Clone the repo**
 
 ```bash
-git clone https://github.com/<YOUR-GITHUB-USERNAME>/cookieprime-ios-sdk.git
-cd cookieprime-ios-sdk
+git clone https://github.com.git
+cd cookieprime_ios_sdk
 ```
 
 **Step 2 — Run the build script**
@@ -84,7 +86,8 @@ struct MyApp: App {
     init() {
         let config = SDKConfiguration(
             appId: Bundle.main.bundleIdentifier ?? "com.example.app",
-            apiKey: "YOUR_API_KEY"
+            apiKey: "YOUR_API_KEY",
+            offlineMode: true // Recommended for standalone on-device storage
         )
         ConsentSDK.initialize(config)
     }
@@ -106,7 +109,8 @@ func application(_ application: UIApplication,
                  didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
     let config = SDKConfiguration(
         appId: Bundle.main.bundleIdentifier ?? "com.example.app",
-        apiKey: "YOUR_API_KEY"
+        apiKey: "YOUR_API_KEY",
+        offlineMode: true
     )
     ConsentSDK.initialize(config)
     return true
@@ -202,9 +206,32 @@ struct ConsentStatusView: View {
 }
 ```
 
+---
+
+## ⚖️ Legal Compliance & Production Checklist (GDPR / App Store)
+
+While the iOS architecture uses true deferred execution (`DeferredSDKLoader`), please apply the following adjustments before shipping in a commercial production app:
+
+1. **Equalize Button Prominence & Block Swipe-to-Dismiss (`ConsentView.swift`)**
+   - Currently, **Accept All** uses a solid blue fill while **Reject All** is unstyled red text, and modal sheets can be dismissed by swiping down without recording a choice.
+   - **Fix:** Give `Accept All` and `Reject All` identical button styling (to avoid CNIL/EDPB dark-pattern flags) and add `.interactiveDismissDisabled(true)` on iOS 15+ so users must make an explicit choice.
+2. **Ensure Offline Mode Still Configures Local Adapters (`SDKConfigurator.swift`)**
+   - In `configureAllSDKs(with:)`, `adapter.configure(with: shouldEnable)` is currently inside the `else` branch of `if offlineManager.isOffline`, which skips local SDK configuration when offline.
+   - **Fix:** Always invoke `adapter.configure(with: shouldEnable)` locally regardless of network state, and only queue remote audit uploads when offline.
+3. **Fix Serial Queue Deadlock in Legacy Mode (`DeferredSDKLoader.swift`)**
+   - `configureLegacySDK(...)` calls `isSDKAllowed(...)` while already inside `queue.sync`, which will deadlock on the serial `DispatchQueue`.
+   - **Fix:** Extract an unlocked `_isSDKAllowed(...)` helper to call inside `queue.sync`.
+4. **Replace `@_silgen_name("_dyld_*")` with `import MachO` (`DependencyScanner.swift`)**
+   - App Store Connect static analysis can flag `@_silgen_name` declarations targeting underscore-prefixed symbols (`_dyld_image_count`, `_dyld_get_image_name`).
+   - **Fix:** Remove the `@_silgen_name` attributes and `import MachO` directly, and remove `"Analytics"` from Firebase Analytics' `classNames` list to prevent false positives on first-party classes.
+5. **Run Standalone (`offlineMode: true`)**
+   - Because the legacy central API backend is retired, initialize with `offlineMode: true` (and `enableTelemetry: false`) so consent proofs remain stored locally in `UserDefaults`/Keychain without queuing failed network retries.
+
+---
+
 ## Project Structure
 
-```
+```text
 Sources/CookiePrimeConsent/
 ├── Configuration/      # Adapter factory + SDK configurator
 │   └── Adapters/       # Firebase, Facebook, AdMob, AppsFlyer, Adjust
